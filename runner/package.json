@@ -1,0 +1,13 @@
+{
+  "name": "driving-school-vibe-runner",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "管理画面からの指示でコードを変更するローカルランナー（軽量レーン限定）。本番へはデプロイしない。",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0"
+  }
+}

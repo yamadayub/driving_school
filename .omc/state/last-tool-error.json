@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"ls /Users/yosuke/dev/driving_school/app/apply/ 2>/dev/null; echo ---; grep -n \\\"form-session\\\\|FORM_SESSION\\\\|redirect\\\\|cookies()\\\" /Users/yosuke/dev/driving_school/app/apply/page.tsx 2>/...",
-  "error": "Exit code 2\n---",
-  "timestamp": "2026-07-29T03:06:38.974Z",
-  "retry_count": 1
-}
