@@ -42,4 +42,4 @@ Thumbs.db
 *.log
 
 # OMC セッション状態（ephemeral。コミットしない）
-.omc/state/
+.omc/
