@@ -40,6 +40,11 @@ interface WebServerConfig {
   command: string
   timeout?: number
   reuseExistingServer?: boolean
+  /**
+   * P3-c2 / MF-1: RV-P3B-019 の「軸を分ける」機構（`TRUST_PROXY=1`）。
+   * **ここに無いと送っている `X-Real-IP` が 1 バイトも読まれない**（設計文書 §9.1）。
+   */
+  env?: Record<string, string | undefined>
 }
 
 /** `CI` の有無を切り替えて `playwright.config.ts` を読み込み直す。 */
@@ -98,5 +103,83 @@ describe('RV-P3A-003: `pnpm test:e2e`（CI 無し）が本番ビルドに対し�
     const webServer = await loadWebServer('1')
     expect(webServer.command).toBe('pnpm start')
     expect(webServer.reuseExistingServer).toBe(false)
+  })
+})
+
+/* ========================================================================= *
+ * P3-c2 / **MF-1**: RV-P3B-019 の「軸を分ける」機構が実際に結線されている
+ * ========================================================================= *
+ *
+ * 出典: `docs/review-p3c2-tests-2026-07-29.md` MF-1、
+ *       `docs/phase-status.md`「P3-c2 の完了条件（申し送り）」3。
+ *
+ * ## なぜ pin が要るのか
+ * P3-c2 の設計は RV-P3B-019 を「E2E サーバーを `TRUST_PROXY=1` で起動し、
+ * テストごとに異なる `X-Real-IP` を送る」で解くと宣言し、スペック側は実際にヘッダを送っている。
+ * **しかし `webServer` に `env` が無ければ、送ったヘッダは 1 バイトも読まれない**——
+ * `resolveClientIp` は縮退時に信頼ヘッダを**一度も見ずに** `key='unknown'` を返すためである。
+ *
+ * これは「**受け口は在るが、呼び出し元がその状態を作らない**」という、
+ * このプロジェクトが P3-c1 で 4 回連続して踏んだ型の 4 段階目そのものである。
+ * したがって**設定されていること自体**を固定する。
+ */
+
+describe('RV-P3B-019 / MF-1: E2E の webServer が TRUST_PROXY=1 で起動する', () => {
+  it('webServer.env に TRUST_PROXY=1 が設定されている', async () => {
+    // **本 describe で最も重要なテスト。**
+    // これが green なら排除される状態: スペックが `X-Real-IP` を送っているのに
+    // サーバー側が縮退構成のままで、**軸が 1 つも分かれない**こと。
+    // その状態では無コスト枠（10 枚/10 分）を全テストが共有し、
+    // 送信成功の E2E は**印の付いた Cookie で Tier B に落ちる**
+    //（＝ RV-P3B-019 は「解いた」と記録されるが解けていない）。
+    const webServer = await loadWebServer(undefined)
+    expect(
+      webServer.env?.TRUST_PROXY,
+      'TRUST_PROXY が無いと X-Real-IP は無視され、軸が分かれない（RV-P3B-019 未解決）',
+    ).toBe('1')
+  })
+
+  it('既定の環境変数を置き換えず引き継いでいる（...process.env の展開）', async () => {
+    // **Playwright は `env` を指定すると既定の環境を置き換える。**
+    // `...process.env` の展開を落とすと `DATABASE_URL` / `FORM_SESSION_SECRET` /
+    // `TURNSTILE_SECRET` 等が消え、`lib/env.ts` の本番 fail-fast で**サーバーが起動しない**
+    //（テストの失敗ではなく webServer の失敗として出るので原因が分かりにくい）。
+    //
+    // ソースの正規表現ではなく**実際に読み込んだ設定オブジェクト**で測る——
+    // `...process.env` と書いてあっても別の行で潰される可能性があるため。
+    const sentinel = `__E2E_ENV_SENTINEL_${Date.now()}__`
+    process.env[sentinel] = 'kept'
+    try {
+      const webServer = await loadWebServer(undefined)
+      expect(
+        webServer.env?.[sentinel],
+        '既定の環境が引き継がれていない（webServer が起動しなくなる）',
+      ).toBe('kept')
+    } finally {
+      delete process.env[sentinel]
+    }
+  })
+
+  it('CI 経路でも TRUST_PROXY=1 が設定される（CI と手元で軸の分かれ方を変えない）', async () => {
+    // これが green なら排除される事故: 手元だけ green で CI が赤（あるいはその逆）になり、
+    // **どちらの結果を信じるべきか分からなくなる**こと。
+    const webServer = await loadWebServer('1')
+    expect(webServer.env?.TRUST_PROXY).toBe('1')
+  })
+
+  it('TRUST_PROXY はアプリのソースには書かれていない（本番へ漏れない）', async () => {
+    // `playwright.config.ts` は**デプロイ対象に含まれない**ので E2E 限定の設定である。
+    // これが green なら排除される事故: 誰かが `.env.production` / `next.config.mjs` /
+    // `vercel.json` 等へ `TRUST_PROXY=1` を移し、**前段が XFF を上書きしない本番**で
+    // クライアントに IP を名乗らせること（P3-c1 §3 / NEW-005）。
+    const { existsSync, readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const file of ['next.config.mjs', 'next.config.js', 'vercel.json', '.env.production']) {
+      const path = resolve(process.cwd(), file)
+      if (!existsSync(path)) continue
+      expect(readFileSync(path, 'utf8'), `${file} に TRUST_PROXY が書かれている`).not.toContain(
+        'TRUST_PROXY',
+      )
+    }
   })
 })

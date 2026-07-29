@@ -80,7 +80,16 @@ export function semaphoreTotalLimit(perShardLimit: number, shards: number = SEMA
   return perShardLimit * shards
 }
 
-export type SemaphoreEndpoint = 'applications' | 'uploads' | 'chat'
+/**
+ * セマフォ（および Tier D の発信元軸キー）を持つ公開エンドポイント。
+ *
+ * ⚠️ **経路ごとに分ける。** 同じ値を使い回すと発信元軸とセマフォを**共有**することになり、
+ * 「片方を叩いたせいでもう片方が 429 / 202 になる」経路ができる。
+ * `'form-session'`（SEC-067 の回復経路）を `'applications'` にしなかったのはこの理由である
+ * ——`trusted` では発信元軸が 5 回/10 分の硬いゲートなので、
+ * **回復を試みたせいで申込そのものが 429 になる**（直そうとした欠陥と同型）。
+ */
+export type SemaphoreEndpoint = 'applications' | 'uploads' | 'chat' | 'form-session'
 
 /**
  * シャードキー（AC-RL-1 / AC-010-13(b) / RV-P3DR2-006）。

@@ -54,6 +54,14 @@ import { isHoneypotFilled, parseApplicationInput } from '@/lib/validators/applic
 import type { ApplicationInput } from '@/lib/validators/application'
 import { consoleSink, createPiiSafeLogger, toErrorLogFields } from '@/lib/pii-log'
 import { sendMail } from '@/lib/mail'
+import { sharedStorage } from '@/lib/storage'
+import {
+  MAGIC_BYTES_NEEDED,
+  detectImageType,
+  isDeclaredSizeAcceptable,
+  matchesDeclaredContentType,
+} from '@/lib/upload-validation'
+import { verifyUploadTokenBinding } from '@/lib/upload-token'
 import {
   AUTO_REPLY_LIMIT_PER_HOUR,
   AUTO_REPLY_WINDOW_MS,
@@ -236,51 +244,243 @@ async function findExisting(idempotencyKey: string) {
   })
 }
 
+/* ------------------------------------------------------------------------- *
+ * 免許証写真の紐付け（F-009 / AC-009-3 / AC-009-4 / AC-009-6 / AC-009-7）
+ * ------------------------------------------------------------------------- */
+
+interface PresentedPhoto {
+  objectKey: string
+  uploadToken: string
+  side: 'front' | 'back'
+}
+
+/** 検証を通り、**紐付けてよい**と確定した写真。`contentType` は**検出結果**である。 */
+interface VerifiedPhoto {
+  tokenId: string
+  objectKey: string
+  side: 'front' | 'back'
+  contentType: string
+  size: number
+}
+
+/** 1 申込あたりの枚数上限（表・裏の各 1 枚 / 境界値表）。 */
+const MAX_LICENSE_PHOTOS = 2
+
+/**
+ * ボディの `licensePhotos` を**形だけ**取り出す。値の正当性はこの後の検証で見る。
+ * 材料は攻撃者が完全に制御するので、**例外を投げず**に落とす。
+ */
+function parsePresentedPhotos(body: unknown): PresentedPhoto[] | null {
+  const raw = (body as { licensePhotos?: unknown } | null)?.licensePhotos
+  if (raw === undefined || raw === null) return []
+  if (!Array.isArray(raw)) return null
+  if (raw.length > MAX_LICENSE_PHOTOS) return null
+
+  const photos: PresentedPhoto[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) return null
+    const { objectKey, uploadToken, side } = entry as Record<string, unknown>
+    if (typeof objectKey !== 'string' || objectKey.length === 0) return null
+    if (typeof uploadToken !== 'string' || uploadToken.length === 0) return null
+    if (side !== 'front' && side !== 'back') return null
+    photos.push({ objectKey, uploadToken, side })
+  }
+  return photos
+}
+
+/**
+ * 提示された写真を検証する。**トランザクションを開始する前に完了させること**（RV-P3D-S10）。
+ *
+ * > 実体検証は**トランザクション開始前**に完了させる。ストレージへのネットワーク I/O を
+ * > トランザクション内に含めない（写真 2 枚で往復 4 回 → 長時間トランザクション →
+ * > **DB コネクション枯渇**）。
+ *
+ * TOCTOU（検証と消費の間）は **`objectKey` が予測不能かつ `uploadToken` が単回使用**であるため
+ * 実務上問題にならない——これが「先に検証してよい」根拠である。
+ *
+ * 検証に落ちた対象は**オブジェクトを削除する**（E-009-5）。
+ * 偽装ファイルを当校のストレージに残さない。
+ */
+async function verifyPresentedPhotos(
+  photos: PresentedPhoto[],
+  now: number,
+): Promise<VerifiedPhoto[] | null> {
+  const storage = sharedStorage()
+  const verified: VerifiedPhoto[] = []
+
+  for (const photo of photos) {
+    const record = await prisma.uploadToken.findUnique({
+      where: { token: photo.uploadToken },
+      select: {
+        id: true,
+        token: true,
+        objectKey: true,
+        contentType: true,
+        maxSize: true,
+        consumed: true,
+        expiresAt: true,
+      },
+    })
+
+    // **正典の判定関数**（AC-009-6 / AC-009-7）。理由は返らない——
+    // 未存在 / 期限切れ / 消費済み / `objectKey` 不一致がすべて同じ `false` になる。
+    // ここが IDOR の本体であり、**受け取った `objectKey` は照合にしか使わない。**
+    if (
+      !verifyUploadTokenBinding(
+        record,
+        { token: photo.uploadToken, objectKey: photo.objectKey },
+        now,
+      )
+    ) {
+      return null
+    }
+
+    // ここから先は「発行元本人である」ことが確定している。**DB から引いたキー**だけを使う。
+    const objectKey = record!.objectKey
+
+    // --- AC-009-4(b): 実サイズの再検証（申告値の検査は代替にならない）---
+    const info = await storage.head(objectKey)
+    if (info === null || !isDeclaredSizeAcceptable(info.size)) {
+      await storage.deleteObject(objectKey)
+      return null
+    }
+
+    // --- AC-009-3: マジックバイトによる実体検証 ---
+    // 署名付き PUT はストレージへ直接行われるため、**サーバーはバイト列を一度も見ないまま
+    // 格納が完了する**。実体は格納後に読んで確かめる以外に知る方法がない。
+    const prefix = await storage.readPrefix(objectKey, MAGIC_BYTES_NEEDED)
+    if (prefix === null || !matchesDeclaredContentType(record!.contentType, prefix)) {
+      // E-009-5: **拒否したら削除する。** 偽装ファイルを残さない。
+      await storage.deleteObject(objectKey)
+      return null
+    }
+
+    const detected = detectImageType(prefix)
+    if (detected === null) {
+      await storage.deleteObject(objectKey)
+      return null
+    }
+
+    verified.push({
+      tokenId: record!.id,
+      objectKey,
+      side: photo.side,
+      // ⚠️ **保存するのは申告値ではなく検出結果**（SF-2 の補償 (b)）。
+      // 申告値をそのまま保存すると、F-018 の配信で実体と食い違い、
+      // ブラウザの content sniffing 次第で解釈が変わる。
+      contentType: detected,
+      size: info.size,
+    })
+  }
+
+  return verified
+}
+
 async function createApplication(
   data: ApplicationInput,
   sid: string,
   receivedAt: Date,
   snapshot: CourseSnapshot,
+  photos: VerifiedPhoto[] = [],
 ): Promise<{ id: string; receiptNumber: string }> {
   const isApplication = data.type === 'APPLICATION'
 
-  const created = await prisma.application.create({
-    data: {
-      receiptNumber: generateReceiptNumber({ now: receivedAt.getTime() }),
-      idempotencyKey: data.idempotencyKey,
-      type: data.type,
-      plans: data.plans,
-      courseId: isApplication ? data.courseId : null,
-      courseNameSnapshot: snapshot.courseNameSnapshot,
-      priceFromSnapshot: snapshot.priceFromSnapshot,
-      school: isApplication ? data.school : null,
-      format: isApplication ? data.format : null,
-      name: data.name,
-      nameKana: data.nameKana,
-      // `birthDate` は JST の暦日。UTC 正午に置くことで、どの TZ で読んでも同じ日付になる。
-      birthDate: new Date(`${data.birthDate}T12:00:00Z`),
-      gender: data.gender,
-      email: data.email,
-      phone: data.phone,
-      postalCode: isApplication ? data.postalCode : null,
-      address: isApplication ? data.address : null,
-      buildingName: isApplication ? data.buildingName : null,
-      licenseRevoked: isApplication ? data.licenseRevoked : null,
-      licenseRevokedNote: isApplication ? data.licenseRevokedNote : null,
-      currentLicenses: isApplication ? data.currentLicenses : [],
-      preferredStartMonth: isApplication ? data.preferredStartMonth : null,
-      preferredTimeSlot: isApplication ? data.preferredTimeSlot : null,
-      paymentMethod: isApplication ? data.paymentMethod : null,
-      firstTime: data.firstTime,
-      referralSources: data.referralSources,
-      message: data.message,
-      privacyConsent: true,
-      sessionIdHash: deriveSessionIdHash(sid, formSessionSecret()),
-    },
-    select: { id: true, receiptNumber: true },
-  })
+  const applicationData = buildApplicationData(data, sid, receivedAt, snapshot, isApplication)
 
-  return created
+  if (photos.length === 0) {
+    // 写真が無い経路は従来どおり（トランザクションを増やさない）。
+    return prisma.application.create({
+      data: applicationData,
+      select: { id: true, receiptNumber: true },
+    })
+  }
+
+  /*
+   * 写真がある場合だけトランザクションを張る。
+   * **中で行うのは `UploadToken` の条件付き更新と作成のみ**——
+   * ストレージ I/O は上の `verifyPresentedPhotos` で完了している（RV-P3D-S10）。
+   */
+  return prisma.$transaction(async (tx) => {
+    for (const photo of photos) {
+      // **条件付き更新**（`consumed: false` のときだけ true にする）。
+      // 並行した 2 リクエストが同じトークンを消費するのを DB 側で 1 回に絞る
+      //（AC-009-6 の単回使用を、アプリの判定だけに頼らない）。
+      const consumed = await tx.uploadToken.updateMany({
+        where: { id: photo.tokenId, consumed: false },
+        data: { consumed: true },
+      })
+      if (consumed.count !== 1) {
+        // 既に消費済み。**トランザクション全体を巻き戻す**（2 件目の LicensePhoto を作らない）。
+        throw new UploadTokenAlreadyConsumedError()
+      }
+    }
+
+    const created = await tx.application.create({
+      data: applicationData,
+      select: { id: true, receiptNumber: true },
+    })
+
+    await tx.licensePhoto.createMany({
+      data: photos.map((photo) => ({
+        applicationId: created.id,
+        objectKey: photo.objectKey,
+        side: photo.side === 'front' ? 'FRONT' : 'BACK',
+        contentType: photo.contentType,
+        size: photo.size,
+      })),
+    })
+
+    return created
+  })
+}
+
+/** 消費済みトークンでの再送（AC-009-6）。**500 にしない**ため専用の型で伝える。 */
+class UploadTokenAlreadyConsumedError extends Error {
+  constructor() {
+    super('upload token already consumed')
+    this.name = 'UploadTokenAlreadyConsumedError'
+  }
+}
+
+function buildApplicationData(
+  data: ApplicationInput,
+  sid: string,
+  receivedAt: Date,
+  snapshot: CourseSnapshot,
+  isApplication: boolean,
+) {
+  return {
+    receiptNumber: generateReceiptNumber({ now: receivedAt.getTime() }),
+    idempotencyKey: data.idempotencyKey,
+    type: data.type,
+    plans: data.plans,
+    courseId: isApplication ? data.courseId : null,
+    courseNameSnapshot: snapshot.courseNameSnapshot,
+    priceFromSnapshot: snapshot.priceFromSnapshot,
+    school: isApplication ? data.school : null,
+    format: isApplication ? data.format : null,
+    name: data.name,
+    nameKana: data.nameKana,
+    // `birthDate` は JST の暦日。UTC 正午に置くことで、どの TZ で読んでも同じ日付になる。
+    birthDate: new Date(`${data.birthDate}T12:00:00Z`),
+    gender: data.gender,
+    email: data.email,
+    phone: data.phone,
+    postalCode: isApplication ? data.postalCode : null,
+    address: isApplication ? data.address : null,
+    buildingName: isApplication ? data.buildingName : null,
+    licenseRevoked: isApplication ? data.licenseRevoked : null,
+    licenseRevokedNote: isApplication ? data.licenseRevokedNote : null,
+    currentLicenses: isApplication ? data.currentLicenses : [],
+    preferredStartMonth: isApplication ? data.preferredStartMonth : null,
+    preferredTimeSlot: isApplication ? data.preferredTimeSlot : null,
+    paymentMethod: isApplication ? data.paymentMethod : null,
+    firstTime: data.firstTime,
+    referralSources: data.referralSources,
+    message: data.message,
+    privacyConsent: true,
+    sessionIdHash: deriveSessionIdHash(sid, formSessionSecret()),
+  }
 }
 
 /* ------------------------------------------------------------------------- *
@@ -358,10 +558,37 @@ export const POST = withPublicMutation(async (request: Request): Promise<Respons
     return invalid(422, [{ field: 'courseId', code: 'NOT_FOUND' }])
   }
 
+  /*
+   * --- 免許証写真の検証（F-009）---
+   * **トランザクション開始前**に完了させる（RV-P3D-S10 / ストレージ I/O を tx に含めない）。
+   * 失敗の理由は返さない（AC-009-7 の列挙攻撃防止）——未存在 / 期限切れ / 消費済み /
+   * `objectKey` 不一致 / 実体不正 のすべてが同じ 403 になる。
+   */
+  const presentedPhotos = parsePresentedPhotos(body)
+  if (presentedPhotos === null) return invalid(422, [{ field: 'licensePhotos', code: 'INVALID' }])
+
+  const verifiedPhotos = await verifyPresentedPhotos(presentedPhotos, receivedAt.getTime())
+  if (verifiedPhotos === null) {
+    logger.warn('application.photo_rejected', { count: presentedPhotos.length })
+    return Response.json({ error: 'forbidden' }, { status: 403 })
+  }
+
   let created: { id: string; receiptNumber: string }
   try {
-    created = await createApplication(data, session.sid, receivedAt, course.snapshot)
+    created = await createApplication(
+      data,
+      session.sid,
+      receivedAt,
+      course.snapshot,
+      verifiedPhotos,
+    )
   } catch (error) {
+    // 消費済みトークンでの再送（AC-009-6）。**500 ではなく 403** で返す
+    //（内部障害ではなく、認可の失敗である）。理由は他の失敗と区別できない。
+    if (error instanceof UploadTokenAlreadyConsumedError) {
+      logger.warn('application.photo_rejected', { count: presentedPhotos.length })
+      return Response.json({ error: 'forbidden' }, { status: 403 })
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       // 並行2リクエストの一意制約違反（P2002）は**失敗ではなく冪等再送**である。
       // 500 にすると利用者は「送信に失敗しました」を見て再送し、さらに 500 を受ける。

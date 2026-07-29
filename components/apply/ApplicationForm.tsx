@@ -7,6 +7,7 @@ import { RateLimitWaitPanel } from '@/components/apply/RateLimitWaitPanel'
 import { StepCourse } from '@/components/apply/steps/StepCourse'
 import { StepEntry } from '@/components/apply/steps/StepEntry'
 import { StepLicense } from '@/components/apply/steps/StepLicense'
+import type { AttachedLicensePhoto } from '@/components/apply/LicensePhotoUpload'
 import { StepPersonal } from '@/components/apply/steps/StepPersonal'
 import { StepPreference } from '@/components/apply/steps/StepPreference'
 import { StepReview } from '@/components/apply/steps/StepReview'
@@ -153,6 +154,27 @@ export function ApplicationForm({
   /** `idempotencyKey` は**マウント時に1回だけ**発番する（form-submission.md §2.1）。 */
   const idempotencyKeyRef = useRef<string>('')
   const honeypotRef = useRef<HTMLInputElement | null>(null)
+  /*
+   * 免許証写真（F-009）。**`useState` ではなく `useRef` に置く。**
+   *
+   * ⚠️ `objectKey` / `uploadToken` は「そのオブジェクトを自分の申込に紐付ける」資格情報である
+   *（SPEC-011）。`values` に入れると下書き保存（`sessionStorage`）の経路に乗り、
+   * 共有端末に残った時点で**後続の利用者が他人の免許証画像を紐付けられる**（AC-008-3(e)）。
+   * `lib/apply-draft.ts` の `DRAFT_FORBIDDEN_KEYS` が再帰的に落とす網もあるが、
+   * **そもそも保存対象の state に入れない**のが第一の網である。
+   * 再レンダリングの必要も無い（表示はスロット側の内部状態が持つ）。
+   */
+  const photosRef = useRef<Record<'front' | 'back', AttachedLicensePhoto | null>>({
+    front: null,
+    back: null,
+  })
+  const setPhoto = useCallback((side: 'front' | 'back', photo: AttachedLicensePhoto | null) => {
+    photosRef.current[side] = photo
+  }, [])
+  const attachedPhotos = useCallback(
+    () => [photosRef.current.front, photosRef.current.back].filter((photo) => photo !== null),
+    [],
+  )
   const summaryRef = useRef<HTMLDivElement | null>(null)
   /** Turnstile ウィジェットの描画先。**明示レンダリングの対象**（下のエフェクト）。 */
   const turnstileRef = useRef<HTMLDivElement | null>(null)
@@ -511,6 +533,15 @@ export function ApplicationForm({
       captchaToken: resolveCaptchaToken(),
       // **クライアント時刻を含めない**（AC-RL-6 (a)）。判定はサーバーが Cookie の `issuedAt` で行う。
       hp_field: honeypotRef.current?.value ?? '',
+      /*
+       * 免許証写真（F-009）。**`values` にも下書きにも入れない値**をここで初めて合流させる。
+       * `photosRef` は `useRef` なので再レンダリングにも下書き保存にも巻き込まれない
+       * ——`objectKey` / `uploadToken` が `sessionStorage` へ出る経路をそもそも作らない（AC-008-3(e)）。
+       * INQUIRY では送らない（AC-010-1 が `licensePhotos` を 422 対象に列挙している）。
+       */
+      ...(type === 'APPLICATION' && attachedPhotos().length > 0
+        ? { licensePhotos: attachedPhotos() }
+        : {}),
     }
 
     let response: Response
@@ -741,7 +772,12 @@ export function ApplicationForm({
       )}
 
       {step === 'license' && type === 'APPLICATION' && (
-        <StepLicense values={values} setValue={setValue} toggleInList={toggleInList} />
+        <StepLicense
+          values={values}
+          setValue={setValue}
+          toggleInList={toggleInList}
+          onPhotoChange={setPhoto}
+        />
       )}
 
       {step === 'preference' && type === 'APPLICATION' && (

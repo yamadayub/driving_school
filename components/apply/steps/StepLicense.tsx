@@ -5,6 +5,10 @@ import { FormField } from '@/components/ui/FormField'
 import { ImportantNoticeBlock } from '@/components/ui/ImportantNoticeBlock'
 import { RadioCardGroup } from '@/components/ui/RadioCardGroup'
 import { LICENSE_OPTIONS, YES_NO_OPTIONS, type Values } from '@/components/apply/form-model'
+import {
+  LicensePhotoUpload,
+  type AttachedLicensePhoto,
+} from '@/components/apply/LicensePhotoUpload'
 
 /**
  * 免許について（APPLICATION 専用ステップ / US-007）。
@@ -16,10 +20,12 @@ export function StepLicense({
   values,
   setValue,
   toggleInList,
+  onPhotoChange,
 }: {
   values: Values
   setValue: (field: string, value: unknown) => void
   toggleInList: (field: string, option: string) => void
+  onPhotoChange: (side: 'front' | 'back', photo: AttachedLicensePhoto | null) => void
 }) {
   return (
     <section>
@@ -59,9 +65,15 @@ export function StepLicense({
         selected={values.currentLicenses as string[]}
         onToggle={(option) => toggleInList('currentLicenses', option)}
       />
-      <p className="mt-4 text-caption text-text-secondary">
-        免許証の写真の添付は今後のアップデートで対応します。
-      </p>
+      {/*
+        免許証写真（F-009）。**任意項目**である——添付しなくても申込は成立する。
+        `objectKey` / `uploadToken` はスロット内部の状態にのみ置き、
+        親へは送信時に必要な最小限だけを渡す（AC-008-3(e) / AC-PII-5）。
+      */}
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <LicensePhotoUpload side="front" onChange={(photo) => onPhotoChange('front', photo)} />
+        <LicensePhotoUpload side="back" onChange={(photo) => onPhotoChange('back', photo)} />
+      </div>
     </section>
   )
 }

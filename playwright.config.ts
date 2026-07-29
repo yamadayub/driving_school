@@ -48,5 +48,29 @@ export default defineConfig({
     timeout: process.env.CI ? 120_000 : 300_000,
     // 起動済みの `next dev` を掴むと、本番ビルドを検証したつもりで dev を見ることになる。
     reuseExistingServer: false,
+    /*
+     * RV-P3B-019 —「上限を緩める」のではなく「**軸を分ける**」（P3-c2 / MF-1）。
+     *
+     * 縮退構成（`VERCEL !== '1'` かつ `TRUST_PROXY` 未設定）では `resolveClientIp` が
+     * 信頼ヘッダを**一度も見ずに** `key='unknown'` を返す。したがって全テストが
+     * 単一の共有バケットを使い、無コスト枠（10 枚/10 分）を数テストで使い切って
+     * 以後の Cookie に `unverified` の印が付く——**送信成功の E2E が原理的に書けなかった**
+     *（P3-b 実測: 通常操作だけで窓内 23 回の `/apply` 遷移）。
+     *
+     * `TRUST_PROXY=1` にすると発信元軸が要求元ごとに分かれる。**閾値も窓も 1 つも変えていない。**
+     * 変わるのは「軸が分かれる」ことだけで、それは**本番（Vercel）で実際に成立している状態**である
+     *（縮退構成のほうが本番と乖離していた）。むしろ `trusted` では発行の硬い上限 30 が
+     * **ゲートとして効き始める**（縮退では計数のみだった）ので、防御は強くなる方向に動く。
+     *
+     * ⚠️ **`env` を指定すると Playwright は既定の環境を置き換える。**
+     * `...process.env` の展開を落とすと `CI` / `DATABASE_URL` / `FORM_SESSION_SECRET` 等が
+     * 消えて webServer が起動しない（`lib/env.ts` の本番 fail-fast に掛かる）。
+     *
+     * ⚠️ **本設定は E2E の webServer 限定であり、本番へは漏れない**
+     *（`playwright.config.ts` はデプロイ対象に含まれない）。
+     * 前段が XFF を上書きしない構成で本番に `TRUST_PROXY=1` を立てると
+     * クライアントが IP を名乗れる（`lib/http-guard.ts` の警告参照）。
+     */
+    env: { ...process.env, TRUST_PROXY: '1' },
   },
 })

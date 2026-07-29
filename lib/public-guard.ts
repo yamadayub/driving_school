@@ -224,10 +224,19 @@ function isJsonContentType(request: Request): boolean {
   return mediaType === 'application/json' || mediaType.endsWith('+json')
 }
 
+/**
+ * ⚠️ 返り値の `ctx` は**省略可能**にしてある。
+ *
+ * Next.js の Route Handler は `(request, context)` で呼ばれるが、
+ * 動的セグメントを持たないルート（`/api/form-session` 等）は context を使わない。
+ * `ctx` を必須にすると `(request) => Promise<Response>` を期待する呼び出し側
+ *（テストや、1 引数で呼ぶ内部の再利用）と**型が噛み合わなくなる**——
+ * 引数の少ない関数型へは代入できても、多い関数型へは代入できないためである。
+ */
 export function withPublicMutation<Ctx = unknown>(
   handler: (request: Request, ctx: Ctx) => Promise<Response>,
   options: PublicGuardOptions,
-): (request: Request, ctx: Ctx) => Promise<Response> {
+): (request: Request, ctx?: Ctx) => Promise<Response> {
   const {
     endpoint,
     requireContentType,
@@ -425,7 +434,8 @@ export function withPublicMutation<Ctx = unknown>(
     // 8) 本体。**例外経路でも必ず release する**——漏れの主因は例外とタイムアウトであり、
     //    リースによる回復は保険であって既定経路ではない。
     try {
-      return await handler(measured, ctx)
+      // `ctx` は省略可能な型にしてあるが、Next.js からは必ず渡される（上のコメント参照）。
+      return await handler(measured, ctx as Ctx)
     } finally {
       if (semaphore && permit) await semaphore.release(permit)
     }

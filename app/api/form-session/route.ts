@@ -65,10 +65,16 @@ import {
   issueFormSession,
 } from '@/lib/form-session-issue'
 import {
+  formSessionAxisKey,
   isFormSessionRenewable,
   readFormSessionCookie,
   verifyFormSessionValue,
 } from '@/lib/form-session'
+import { withPublicMutation, TIER_B_BODY } from '@/lib/public-guard'
+import { sharedSemaphoreStore } from '@/lib/runtime-stores'
+import { createSemaphore } from '@/lib/semaphore'
+import { consoleSink, createPiiSafeLogger } from '@/lib/pii-log'
+import { verifyTurnstile } from '@/lib/turnstile'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -84,6 +90,32 @@ const issueLimiter = createRateLimiter({
   windowMs: FORM_SESSION_ISSUE_WINDOW_MS,
   store: sharedRateLimitStore(),
 })
+
+/* ------------------------------------------------------------------------- *
+ * 回復経路（POST）の軸。**発行（GET）とも申込とも別勘定にする。**
+ * ------------------------------------------------------------------------- */
+
+/** 回復要求の発信元軸。縮退では計数のみ。 */
+const recoverySourceLimiter = createRateLimiter({
+  limit: 30,
+  windowMs: FORM_SESSION_ISSUE_WINDOW_MS,
+  store: sharedRateLimitStore(),
+})
+
+/** 回復要求の Cookie 軸。縮退で enforce される唯一の Tier D 軸。 */
+const recoveryFormSessionLimiter = createRateLimiter({
+  limit: 10,
+  windowMs: FORM_SESSION_ISSUE_WINDOW_MS,
+  store: sharedRateLimitStore(),
+})
+
+const recoverySemaphore = createSemaphore({
+  store: sharedSemaphoreStore(),
+  endpoint: 'form-session',
+  perShardLimit: 8,
+})
+
+const recoveryLogger = createPiiSafeLogger(consoleSink)
 
 getServerEnv()
 
@@ -165,3 +197,132 @@ export async function GET(request: Request): Promise<Response> {
   response.cookies.set(result.cookieName, result.cookieValue, result.attributes)
   return response
 }
+
+/* ------------------------------------------------------------------------- *
+ * POST — SEC-067 の回復経路（P3-c1 から明示的に繰り越した Must）
+ * ------------------------------------------------------------------------- *
+ *
+ * ## なぜこの経路が要るのか
+ * 縮退構成（`trusted=false`）では、第三者が `GET /api/form-session` を
+ * **10 リクエスト / 10 分**送るだけで無コスト枠が枯れ、以後その窓の新規来訪者全員に
+ * `unverified` の印が付く。印の付いた Cookie は `verifyFormSessionValue` が `null` を返すので
+ * 送信も**写真アップロードも** Tier B（403）になる。
+ *
+ * **CAPTCHA では抜けられない**——Turnstile 検証は `app/api/applications/route.ts` の
+ * **ハンドラ内**にあり、`lib/public-guard.ts` の Tier B 判定より**後**なので一度も評価されない。
+ * これは `lib/public-guard.ts` が 413 について自ら禁じた
+ * 「CAPTCHA を解いて再送しても同じ応答が返る**抜けられないループ**」と同型である。
+ *
+ * P3-c1 は `hasVerifiedSession`（自己維持の切断）を結線したが、
+ * **印の付いた利用者には原理的に到達しない**ことが実測で確定した。
+ * **印から抜ける唯一の道がこの `challengeToken` である。**
+ *
+ * ## コストは「発行の時点で」払わせる
+ * ラッパを通してハンドラの Turnstile で判定させる形は **SEC-057 を再び開く**
+ *（`form-session-issue-cost.test.ts` / `form-session-cost.int.ts` は Turnstile を
+ *  「常に通過」として測るため、到達数が Cookie 枚数に比例して戻る）。
+ * したがって**チャレンジを通した要求にだけ印の無い Cookie を出す**。
+ */
+
+/** Tier B（403 + challenge）。**降格理由を区別できないよう本文を 1 つに固定する。** */
+function tierB(): Response {
+  return Response.json(TIER_B_BODY, { status: 403 })
+}
+
+export const POST = withPublicMutation(async (request: Request): Promise<Response> => {
+  let payload: unknown
+  try {
+    payload = await request.json()
+  } catch {
+    // 壊れた JSON で 500 を起こさせない（SEC-042）。回復経路も同じ扱いにする。
+    return tierB()
+  }
+
+  const captchaToken = (payload as { captchaToken?: unknown } | null)?.captchaToken
+
+  // ⚠️ **サーバー側で検証する。クライアントの自己申告を信じない**（P3-c1 §12.2-3）。
+  // ボディの値を無検証で `challengeToken` へ流すと、**印が 1 行で無効化される**
+  //（＝ 無コスト枠が実質無制限になる / SEC-057 の再来）。
+  // `verifyTurnstile` は秘密鍵が無ければ false を返す fail-closed なので、常に呼んで結果だけを見る。
+  const passed = await verifyTurnstile(captchaToken, {
+    secret: process.env.TURNSTILE_SECRET ?? '',
+  })
+  if (!passed) return tierB()
+
+  const secret = process.env.FORM_SESSION_SECRET ?? ''
+  const now = Date.now()
+
+  // GET と同じ判定を通す（AC-RL-8: 判定の複製を作らない）。
+  // 既に有効な Cookie を持っているなら回復は不要——**チャレンジトークンを消費させない。**
+  const presented = verifyFormSessionValue(readFormSessionCookie(request), secret, now)
+
+  const result = await issueFormSession({
+    clientIp: resolveClientIp(request),
+    limiter: issueLimiter,
+    secret,
+    hasVerifiedSession: presented !== null && !isFormSessionRenewable(presented, now),
+    // ★ **検証が通ったトークンだけ**を渡す。同一トークンの 2 回目以降は
+    //   `issueFormSession` 側で「未通過」として扱われる（増幅率 1 / REV-P3C1-002）。
+    challengeToken: typeof captchaToken === 'string' ? captchaToken : undefined,
+  })
+
+  if (!result.issued) {
+    // `already-verified`（回復不要）も `rate-limited` も、利用者から見れば
+    // 「そのまま使ってよい」なので 200 を返す。**Cookie は発行しない。**
+    return Response.json({ ok: true }, { status: 200 })
+  }
+
+  const response = Response.json({ ok: true }, { status: 200 })
+  const attributes = result.attributes
+  response.headers.append(
+    'set-cookie',
+    `${result.cookieName}=${result.cookieValue}; Max-Age=${attributes.maxAge}; Path=${attributes.path}; SameSite=Lax; Secure; HttpOnly`,
+  )
+  return response
+}, {
+  // ⚠️ **`applications` と分ける**（MF-3）。同じ値にすると回復要求が
+  // **申込送信と同じ発信元軸・同じセマフォ**を消費する——`trusted` では発信元軸が
+  // 5 回/10 分の硬いゲートなので、**「回復を試みたせいで申込そのものが 429 になる」**という
+  // 直そうとした欠陥（SEC-067）と同型の経路ができる。
+  endpoint: 'form-session',
+  requireContentType: 'json',
+  limiters: {
+    // Tier D 軸を**ゼロにしない**。ここが空だと、この経路は
+    // **Turnstile の siteverify（外部 API）を無制限に叩ける入口**になる
+    //（当校の Turnstile クォータと Cloudflare への往復を第三者が自由に消費できる）。
+    source: recoverySourceLimiter,
+    formSession: recoveryFormSessionLimiter,
+  },
+  formSessionKey: formSessionAxisKey,
+  /*
+   * ⚠️ **Cookie の「存在」だけを見る。3 つの選択肢のうちこれだけが成立する。**
+   *
+   *  (a) 渡さない（`undefined`）
+   *      → `lib/public-guard.ts` の条件1'-3 `if (!resolved.trusted && !verifyFormSession)` により
+   *        **縮退構成（= SEC-067 が成立する唯一の構成）で回復経路の全リクエストが Tier B** になる。
+   *        「回復経路を作ったが、回復が必要な構成では 1 度も使えない」
+   *        ——**直そうとした欠陥（抜けられないループ）を回復経路自身が再現する。**
+   *
+   *  (b) `verifyFormSessionValue` を使う（uploads と同じ形）
+   *      → **印の付いた Cookie が弾かれる。** 回復を必要としているのはまさにその人たちなので、
+   *        **回復できる人が誰もいなくなる。** uploads の契約を機械的に横展開するとこうなる。
+   *
+   *  (c) **本実装: Cookie の存在だけを見て、印の有無は見ない。**
+   *
+   * ⚠️ **`() => true` にしてはならない**（CR-001 / 一度そう実装して差し戻された）。
+   * `formSessionKey` は Cookie 無しで `null` を返すので **formSession 軸が作られず**、
+   * 発信元軸は縮退では計数のみである。したがって `() => true` は
+   * **Cookie を持たない要求に対して enforce される Tier D 軸が 1 つも無い公開変更系エンドポイント**を
+   * 作る——その 1 リクエストごとに `verifyTurnstile`（Cloudflare siteverify への外部往復）が走るので、
+   * **MF-3 で塞いだはずの穴（siteverify を無制限に叩かせる）がそのまま開く。**
+   *
+   * **Cookie を要求しても正規の回復導線は 1 つも壊れない**——
+   * 印は発行時に Cookie へ焼かれるものなので、**回復を必要とする利用者は必ず Cookie を持っている。**
+   * Cookie を持たない利用者は `GET /api/form-session` で新しい Cookie を得れば済み、
+   * そもそも回復経路を通る理由が無い。
+   */
+  verifyFormSession: (req) => readFormSessionCookie(req) !== null,
+  semaphore: recoverySemaphore,
+  clientIp: (req) => resolveClientIp(req),
+  logger: recoveryLogger,
+})
