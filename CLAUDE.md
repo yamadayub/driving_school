@@ -219,6 +219,40 @@ Phase 9: 完了報告
 - Security Agentが `Critical/High` → Impl Agentに即時修正を指示 → 再監査
 - 最大3回の差し戻しで解決しない場合 → ユーザーに判断を仰ぐ
 
+### 軽量レーン（見た目だけの変更）
+
+**9フェーズは新機能のための手順であり、レイアウト修正には重すぎる。** 見た目だけの変更は本レーンを使う。
+
+**適用条件（すべて満たすこと）**
+- 変更対象が `components/**` / `app/**/page.tsx` の JSX・Tailwind クラス・`lib/design-tokens.ts` の値のみ
+- **ロジック・API ルート・`lib/` の判定関数・Prisma スキーマ・認証・レート制限に一切触れない**
+- 新しいユーザー入力を受け取らない（受け取るなら個人情報の経路になるため通常フロー）
+
+**手順**
+1. 変更（サブエージェント不要。直接編集してよい）
+2. `pnpm type-check` → `pnpm test:unit` → `CI=1 pnpm test:e2e`
+3. 3つが通れば完了。**Spec / Security / Senior Review は不要**
+
+**なぜ E2E だけは省かないか**: E2E は主要導線（申込・ログイン・コース比較）が実際に通ることを見る唯一の網である。レイアウト変更は「見た目が変わっただけ」のつもりでラベルや `data-testid` を消しやすく、それは**機能の破壊**であって見た目の変更ではない。`tests/unit/e2e-selector-contract.test.ts` が一部を先回りで捕まえるが、最終確認は E2E が担う。
+
+**このレーンを使ってはいけない例**: 「フォームの項目を1つ増やす」「ボタンを押したら送信されるようにする」「管理画面に一覧を追加する」——いずれも入力・保存・権限が絡むので通常フロー。
+
+### デザイン値の変更（色・余白・角丸・影）
+
+**`lib/design-tokens.ts` を編集する。** `tailwind.config.ts` はそこから導出しており、値を二重に持たない。
+
+```
+DESIGN.md（人が読む仕様）
+   ↓ 一致を tests/unit/design-tokens.test.ts が固定
+lib/design-tokens.ts  ← ★ここだけ編集する
+   ↓ import して導出
+tailwind.config.ts → コンポーネントの Tailwind クラスに反映
+```
+
+**背景**: 以前は同じ値が3箇所（DESIGN.md / design-tokens.ts / tailwind.config.ts）にあり、コンポーネントは Tailwind クラスしか使っていなかったため、**`design-tokens.ts` だけを書き換えても描画は 1px も変わらなかった**。導出に変えてこれを構造的に防いでいる。
+
+**例外**: バッジ役割ごとの配色（`school` / `category` / `subsidy`）と `fontSize` は `tailwind.config.ts` に直接記述したまま。前者は色相ドメインの分離（REV-008）、後者は `clamp()` を含むため。
+
 ### バグ修正フロー
 ```
 1. 失敗しているテストを特定

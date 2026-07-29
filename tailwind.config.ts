@@ -1,7 +1,18 @@
 import type { Config } from 'tailwindcss'
+import { colors as token, radius, shadows, spacing } from './lib/design-tokens'
 
 // デザイントークンの単一参照元は DESIGN.md（§2 Color / §3 Typography / §5 Layout / §6 Elevation）。
-// ここでは Tailwind の theme トークンとして反映する。色相ドメインは役割(role)ごとに分離する（REV-008）。
+//
+// ⚠️ **値をここに直接書かない。`lib/design-tokens.ts` から導出する。**
+// 以前は同じ値が DESIGN.md / lib/design-tokens.ts / 本ファイルの3箇所にあり、
+// **コンポーネントは Tailwind クラスしか使っていない**（design-tokens.ts を import している
+// コンポーネントは 0 件）ため、`design-tokens.ts` だけを書き換えても**描画は 1px も変わらなかった**。
+// 「変えたのに反映されない」を構造的に防ぐため、本ファイルは導出専用にする。
+//
+// 色を変えるときは `lib/design-tokens.ts` を編集すれば、ここと
+// `tests/unit/design-tokens.test.ts`（DESIGN.md との一致を固定）の両方に反映される。
+// 色相ドメインは役割(role)ごとに分離する（REV-008）。
+const px = (n: number) => `${n}px`
 const config: Config = {
   content: [
     './app/**/*.{ts,tsx}',
@@ -12,32 +23,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Primary（信頼のブランドブルー）
-        primary: {
-          50: '#EFF6FF',
-          500: '#3B82F6',
-          700: '#1D4ED8',
-          800: '#1E40AF',
-          DEFAULT: '#1D4ED8',
-        },
-        // Accent（推進力のオレンジ — 主要CTA）
-        accent: {
-          50: '#FFF7ED',
-          500: '#F97316', // 装飾のみ（文字を乗せない）
-          700: '#C2410C',
-          800: '#9A3412',
-          DEFAULT: '#C2410C',
-        },
+        // Primary（信頼のブランドブルー）— DEFAULT は文字を乗せられる 700
+        primary: { ...token.primary, DEFAULT: token.primary[700] },
+        // Accent（推進力のオレンジ — 主要CTA）。500 は装飾のみ（文字を乗せない）
+        accent: { ...token.accent, DEFAULT: token.accent[700] },
         // LINE Brand（LINE相談CTA専用）
-        line: {
-          DEFAULT: '#06C755',
-          dark: '#05A648',
-        },
-        // Semantic
-        success: { DEFAULT: '#16A34A', bg: '#F0FDF4' },
-        warning: { DEFAULT: '#D97706', bg: '#FFFBEB' },
-        danger: { DEFAULT: '#DC2626', bg: '#FEF2F2' },
-        info: { DEFAULT: '#0284C7', bg: '#F0F9FF' },
+        line: { DEFAULT: token.line.base, dark: token.line.dark },
+        // Semantic（`bg` は淡色面。トークン側は前景色のみ持つ）
+        success: { DEFAULT: token.semantic.success, bg: '#F0FDF4' },
+        warning: { DEFAULT: token.semantic.warning, bg: '#FFFBEB' },
+        danger: { DEFAULT: token.semantic.danger, bg: '#FEF2F2' },
+        info: { DEFAULT: token.semantic.info, bg: '#F0F9FF' },
         // Badge role: 校舎 (School) — Outline / Indigo・Teal
         school: {
           iwataki: '#4338CA', // Indigo 700
@@ -67,16 +63,16 @@ const config: Config = {
         },
         // Neutral
         text: {
-          primary: '#111827',
-          secondary: '#4B5563',
-          disabled: '#9CA3AF',
+          primary: token.neutral.textPrimary,
+          secondary: token.neutral.textSecondary,
+          disabled: token.neutral.textDisabled,
         },
         border: {
-          DEFAULT: '#E5E7EB',
-          strong: '#CBD5E1',
+          DEFAULT: token.neutral.border,
+          strong: token.neutral.borderStrong,
         },
-        surface: '#FFFFFF',
-        canvas: '#F8FAFC', // ページ背景
+        surface: token.neutral.surface,
+        canvas: token.neutral.background, // ページ背景
       },
       fontFamily: {
         heading: ['var(--font-heading)'],
@@ -94,30 +90,30 @@ const config: Config = {
         caption: ['12px', { lineHeight: '1.5' }],
       },
       spacing: {
-        // DESIGN §5 Spacing Scale
-        xs: '4px',
-        s: '8px',
-        m: '16px',
-        l: '24px',
-        xl: '32px',
-        xxl: '48px',
-        xxxl: '64px',
+        // DESIGN §5 Spacing Scale（`lib/design-tokens.ts` から導出）
+        xs: px(spacing.xs),
+        s: px(spacing.s),
+        m: px(spacing.m),
+        l: px(spacing.l),
+        xl: px(spacing.xl),
+        xxl: px(spacing.xxl),
+        xxxl: px(spacing.xxxl),
       },
       borderRadius: {
         // DESIGN §9: 8px(要素), 12px(カード), 999px(ピルバッジ)
-        DEFAULT: '8px',
-        card: '12px',
-        pill: '999px',
+        DEFAULT: px(radius.element),
+        card: px(radius.card),
+        pill: px(radius.pill),
       },
       maxWidth: {
         container: '1120px', // DESIGN §5 Container
       },
       boxShadow: {
-        // DESIGN §6 Depth & Elevation
-        level1: '0 1px 3px rgba(15, 23, 42, 0.08)',
-        level2: '0 4px 12px rgba(15, 23, 42, 0.12)',
-        level3: '0 12px 32px rgba(15, 23, 42, 0.18)',
-        level4: '0 16px 40px rgba(15, 23, 42, 0.22)',
+        // DESIGN §6 Depth & Elevation（`lib/design-tokens.ts` から導出）
+        level1: shadows.level1,
+        level2: shadows.level2,
+        level3: shadows.level3,
+        level4: shadows.level4,
       },
     },
   },
