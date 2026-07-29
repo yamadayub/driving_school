@@ -189,6 +189,11 @@ async function handleRun(instruction, emit) {
     return
   }
 
+  // **戻り先を必ず記録する。** 初版はこれを持たず、成功時にブランチを切り替えたまま
+  // 終了していた（失敗時だけ `git switch -` していた）。結果、以降の作業が
+  // 意図せず vibe ブランチに積まれる——実際に一度そうなった。
+  const baseBranch = await git('rev-parse', '--abbrev-ref', 'HEAD')
+
   await git('switch', '-c', branch)
   emit({ type: 'branch', branch })
 
@@ -276,9 +281,9 @@ async function handleRun(instruction, emit) {
 
   const changed = await git('status', '--porcelain')
   if (!changed) {
-    emit({ type: 'done', ok: false, message: '変更が発生しませんでした。', denied })
-    await git('switch', '-')
+    await git('switch', baseBranch)
     await git('branch', '-D', branch)
+    emit({ type: 'done', ok: false, message: '変更が発生しませんでした。', denied, branch: baseBranch })
     return
   }
 
@@ -293,6 +298,17 @@ async function handleRun(instruction, emit) {
   emit({ type: 'gate', name: 'type-check', status: types.ok ? 'pass' : 'fail', output: types.output })
 
   const ok = types.ok
+  // ゲートが落ちても**変更は必ずブランチにコミットする。** そうしないと
+  // 未コミットのまま元ブランチへ戻れず（あるいは変更を引きずって戻り）、
+  // 「どこに何が残っているか分からない」状態になる。
+  if (!ok) {
+    await git('add', '-A')
+    await git(
+      'commit',
+      '-m',
+      `wip: ${instruction.slice(0, 60)}\n\n型チェックが通らなかった変更。**この状態で使わないこと。**`,
+    )
+  }
   if (ok) {
     await git('add', '-A')
     await git(
@@ -302,6 +318,9 @@ async function handleRun(instruction, emit) {
     )
     emit({ type: 'commit', branch, files: [...touched] })
   }
+
+  // **必ず元ブランチへ戻る。** 変更は `branch` に残っている。
+  await git('switch', baseBranch)
 
   emit({
     type: 'done',
