@@ -124,7 +124,10 @@ async function resolveInRepo(rawPath) {
       break
     } catch {
       const parent = path.dirname(cursor)
-      if (parent === cursor) return false // ルートまで辿っても実体が無い
+      // ルートまで辿っても実体が無い。**`false` ではなく `null` を返すこと**——
+      // 呼び出し側は `=== null` で判定するので、`false` はすり抜けて
+      // `re.test(false)` が文字列 "false" に対して走り、許可されてしまう。
+      if (parent === cursor) return null
       rest.unshift(path.basename(cursor))
       cursor = parent
     }
@@ -213,8 +216,21 @@ async function handleRun(instruction, emit) {
       model: 'claude-opus-5',
       permissionMode: 'default',
       maxTurns: 40,
-      canUseTool: async (request) => {
-        const name = request.toolName
+      /**
+       * ⚠️ **シグネチャは `(toolName, input, options)` の 3 引数**であり、
+       * 戻り値は boolean ではなく `{ behavior: 'allow' | 'deny' }` である
+       * （`sdk.mjs` の呼び出し `canUseTool(request.request.tool_name, request.request.input, {...})`
+       *   と `cli.js` の `behavior === "allow" | "deny" | "ask" | "passthrough"` で確認した）。
+       *
+       * 初版は公開ドキュメントの記載どおり単一 `request` オブジェクト + boolean で書いており、
+       * `request.toolName` が常に undefined になって**全ツールが拒否**されていた。
+       * 動作確認をしなければ「セキュリティが効いている」と誤認したまま出荷していた
+       * ——拒否側に倒れていたので事故にはならなかったが、**推測で SDK を使った結果**である。
+       */
+      canUseTool: async (name, input) => {
+        const allow = { behavior: 'allow', updatedInput: input }
+        const deny = (message) => ({ behavior: 'deny', message })
+
         if (READ_TOOLS.has(name)) {
           // **読み取りにもパス検査を掛ける（SEC-077）。** Read/Glob/Grep は絶対パスを取れるので、
           // 無条件許可はローカルファイルシステム全域の読み取りを許すことになる。
@@ -222,34 +238,33 @@ async function handleRun(instruction, emit) {
           // `Grep` / `Glob` は `path` が**任意**なので、省略されると `cwd`(= REPO) 全体を走り、
           // `READ_DENIED_PATTERNS` を一度も通らずに `.env` の中身まで拾える。
           // 「引数が無いから安全」ではなく「引数が無いから検査できない」——**検査できないものは拒否する。**
-          const target = request.input?.file_path ?? request.input?.path
+          const target = input?.file_path ?? input?.path
           if (target === undefined) {
             denied += 1
             emit({ type: 'denied', tool: name, path: '(パス未指定)' })
-            return false
+            return deny('パスを指定してください（例 path: "components"）。検査できない読み取りは許可しません。')
           }
-          const allowed = await isAllowedRead(target)
-          if (!allowed) {
+          if (!(await isAllowedRead(target))) {
             denied += 1
             emit({ type: 'denied', tool: name, path: String(target) })
+            return deny('このパスは読み取れません（秘密を含む場所、またはリポジトリ外）。')
           }
-          return allowed
+          return allow
         }
         if (!WRITE_TOOLS.has(name)) {
           // Bash を含む未知のツールは一律拒否する（ゲートはランナーが回す）。
           denied += 1
           emit({ type: 'denied', tool: name })
-          return false
+          return deny(`${name} は使用できません。components/ 配下の編集だけが許可されています。`)
         }
-        const target = request.input?.file_path ?? request.input?.path
-        const allowed = await isAllowedWrite(target)
-        if (!allowed) {
+        const target = input?.file_path ?? input?.path
+        if (!(await isAllowedWrite(target))) {
           denied += 1
           emit({ type: 'denied', tool: name, path: String(target ?? '') })
-          return false
+          return deny('このパスは変更できません。components/ 配下だけが編集可能です。')
         }
         touched.add(String(target))
-        return true
+        return allow
       },
     },
   })
