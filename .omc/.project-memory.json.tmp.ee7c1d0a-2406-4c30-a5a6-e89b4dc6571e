@@ -1,0 +1,532 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1785164931596,
+  "projectRoot": "/Users/yosuke/dev/driving_school",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "15.1.4",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "19.0.0",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.0.0",
+        "category": "frontend"
+      },
+      {
+        "name": "@playwright/test",
+        "version": "1.49.1",
+        "category": "testing"
+      },
+      {
+        "name": "vitest",
+        "version": "2.1.8",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "pnpm build 2>&1 | grep -E \"^(✓|✔|├|└|┌|ƒ|○|Route|  ⚠|Failed|Error)\" | tail -25; echo \"BUILD_EXIT=${PIPESTATUS[0]}\"",
+    "testCommand": "lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null; pkill -9 -f ms-playwright 2>/dev/null; pkill -9 -f 'next-server' 2>/dev/null; sleep 3; docker ps --filter name=driving_school_pg --format '{{.Status}}'; CI=1 pnpm test:e2e > /private/tmp/claude-501/-Users-yosuke-dev-driving-school/9465f7c2-8c94-49a5-89b2-050f94e821eb/scratchpad/e2e-p3a-final.log 2>&1; echo \"EXIT=$?\"; grep -E 'passed|failed|flaky|skipped' /private/tmp/claude-501/-Users-yosuke-dev-driving-school/9465f7c2-8c94-49a5-89b2-050f94e821eb/scratchpad/e2e-p3a-final.log | tail -6",
+    "lintCommand": "pnpm lint",
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "dev": "next dev",
+      "build": "prisma generate && next build",
+      "start": "next start",
+      "lint": "next lint",
+      "type-check": "tsc --noEmit",
+      "test": "pnpm test:unit && pnpm test:integration && pnpm test:e2e",
+      "test:unit": "vitest run --config vitest.config.ts",
+      "test:unit:watch": "vitest --config vitest.config.ts",
+      "test:integration": "vitest run --config vitest.integration.config.ts",
+      "test:e2e": "playwright test",
+      "test:e2e:ui": "playwright test --ui",
+      "test:e2e:debug": "playwright test --debug",
+      "db:generate": "prisma generate",
+      "db:validate": "prisma validate",
+      "db:migrate": "prisma migrate dev",
+      "db:seed": "tsx prisma/seed.ts",
+      "postinstall": "prisma generate"
+    }
+  },
+  "conventions": {
+    "namingStyle": "camelCase",
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app",
+      "components",
+      "docs",
+      "lib",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 2,
+      "lastAccessed": 1785164931453,
+      "keyFiles": [
+        "globals.css",
+        "layout.tsx"
+      ]
+    },
+    "components": {
+      "path": "components",
+      "purpose": "UI components",
+      "fileCount": 0,
+      "lastAccessed": 1785164931455,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 12,
+      "lastAccessed": 1785164931475,
+      "keyFiles": [
+        "business-spec.md",
+        "current-site-analysis.md",
+        "dev-database.md",
+        "functional-spec.md",
+        "phase-status.md"
+      ]
+    },
+    "lib": {
+      "path": "lib",
+      "purpose": "Library code",
+      "fileCount": 19,
+      "lastAccessed": 1785164931562,
+      "keyFiles": [
+        "auth-guard.ts",
+        "badge.ts",
+        "course-dto.ts",
+        "course-filter.ts",
+        "course-view.ts"
+      ]
+    },
+    "playwright-report": {
+      "path": "playwright-report",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785164931583,
+      "keyFiles": [
+        "index.html"
+      ]
+    },
+    "prisma": {
+      "path": "prisma",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1785164931584,
+      "keyFiles": [
+        "schema.prisma",
+        "seed.ts"
+      ]
+    },
+    "prompts": {
+      "path": "prompts",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1785164931584,
+      "keyFiles": [
+        "step3-functional-design.md",
+        "step4-tdd-cycle.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 1,
+      "lastAccessed": 1785164931584,
+      "keyFiles": [
+        "dev-db.sh"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1785164931585,
+      "keyFiles": []
+    },
+    "test-results": {
+      "path": "test-results",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785164931586,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1785164931587,
+      "keyFiles": []
+    },
+    "app/api": {
+      "path": "app/api",
+      "purpose": "API routes",
+      "fileCount": 0,
+      "lastAccessed": 1785164931588,
+      "keyFiles": []
+    },
+    "prisma/migrations": {
+      "path": "prisma/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 1,
+      "lastAccessed": 1785164931594,
+      "keyFiles": [
+        "migration_lock.toml"
+      ]
+    },
+    "tests/fixtures": {
+      "path": "tests/fixtures",
+      "purpose": "Test fixtures",
+      "fileCount": 2,
+      "lastAccessed": 1785164931596,
+      "keyFiles": [
+        "seed-counts.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "docs/functional-spec.md",
+      "accessCount": 160,
+      "lastAccessed": 1785259958941,
+      "type": "file"
+    },
+    {
+      "path": "docs/tech-stack.md",
+      "accessCount": 53,
+      "lastAccessed": 1785262031626,
+      "type": "file"
+    },
+    {
+      "path": "docs/business-spec.md",
+      "accessCount": 47,
+      "lastAccessed": 1785257726955,
+      "type": "file"
+    },
+    {
+      "path": "auth.ts",
+      "accessCount": 35,
+      "lastAccessed": 1785251948880,
+      "type": "file"
+    },
+    {
+      "path": "DESIGN.md",
+      "accessCount": 24,
+      "lastAccessed": 1785252173407,
+      "type": "file"
+    },
+    {
+      "path": "lib/env.ts",
+      "accessCount": 21,
+      "lastAccessed": 1785269312688,
+      "type": "file"
+    },
+    {
+      "path": "prisma/seed.ts",
+      "accessCount": 18,
+      "lastAccessed": 1785205061848,
+      "type": "file"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "accessCount": 16,
+      "lastAccessed": 1785257678778,
+      "type": "file"
+    },
+    {
+      "path": "lib/kv.ts",
+      "accessCount": 15,
+      "lastAccessed": 1785269314907,
+      "type": "file"
+    },
+    {
+      "path": "app/page.tsx",
+      "accessCount": 13,
+      "lastAccessed": 1785149110701,
+      "type": "file"
+    },
+    {
+      "path": "app/admin/login/page.tsx",
+      "accessCount": 13,
+      "lastAccessed": 1785203263231,
+      "type": "file"
+    },
+    {
+      "path": "app/layout.tsx",
+      "accessCount": 13,
+      "lastAccessed": 1785264777611,
+      "type": "file"
+    },
+    {
+      "path": "middleware.ts",
+      "accessCount": 13,
+      "lastAccessed": 1785269312518,
+      "type": "file"
+    },
+    {
+      "path": "playwright.config.ts",
+      "accessCount": 12,
+      "lastAccessed": 1785247804579,
+      "type": "file"
+    },
+    {
+      "path": "lib/db.ts",
+      "accessCount": 10,
+      "lastAccessed": 1785203217727,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 9,
+      "lastAccessed": 1785249631840,
+      "type": "file"
+    },
+    {
+      "path": "app/globals.css",
+      "accessCount": 9,
+      "lastAccessed": 1785252173555,
+      "type": "file"
+    },
+    {
+      "path": ".claude/skills/senior-review.md",
+      "accessCount": 9,
+      "lastAccessed": 1785258328258,
+      "type": "file"
+    },
+    {
+      "path": ".env.example",
+      "accessCount": 9,
+      "lastAccessed": 1785263597824,
+      "type": "file"
+    },
+    {
+      "path": "vitest.integration.config.ts",
+      "accessCount": 8,
+      "lastAccessed": 1785204685318,
+      "type": "file"
+    },
+    {
+      "path": "tests/unit/env.test.ts",
+      "accessCount": 8,
+      "lastAccessed": 1785263064906,
+      "type": "file"
+    },
+    {
+      "path": "lib/school-info.ts",
+      "accessCount": 7,
+      "lastAccessed": 1785124299101,
+      "type": "file"
+    },
+    {
+      "path": "lib/design-tokens.ts",
+      "accessCount": 7,
+      "lastAccessed": 1785149135705,
+      "type": "file"
+    },
+    {
+      "path": "docs/dev-database.md",
+      "accessCount": 6,
+      "lastAccessed": 1785147679786,
+      "type": "file"
+    },
+    {
+      "path": ".env",
+      "accessCount": 6,
+      "lastAccessed": 1785205976127,
+      "type": "file"
+    },
+    {
+      "path": "next.config.mjs",
+      "accessCount": 6,
+      "lastAccessed": 1785262016728,
+      "type": "file"
+    },
+    {
+      "path": "docs/product-concept.md",
+      "accessCount": 5,
+      "lastAccessed": 1784464615075,
+      "type": "file"
+    },
+    {
+      "path": "docs/review-p0-spec-2026-07-19.md",
+      "accessCount": 5,
+      "lastAccessed": 1784465775933,
+      "type": "file"
+    },
+    {
+      "path": "docs/current-site-analysis.md",
+      "accessCount": 5,
+      "lastAccessed": 1785070307032,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/layout.md",
+      "accessCount": 5,
+      "lastAccessed": 1785252164158,
+      "type": "file"
+    },
+    {
+      "path": ".claude/skills/spec.md",
+      "accessCount": 5,
+      "lastAccessed": 1785259043368,
+      "type": "file"
+    },
+    {
+      "path": "vitest.config.ts",
+      "accessCount": 4,
+      "lastAccessed": 1785109337045,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.json",
+      "accessCount": 4,
+      "lastAccessed": 1785109350389,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/course-comparison.md",
+      "accessCount": 4,
+      "lastAccessed": 1785252160446,
+      "type": "file"
+    },
+    {
+      "path": "tailwind.config.ts",
+      "accessCount": 4,
+      "lastAccessed": 1785252178929,
+      "type": "file"
+    },
+    {
+      "path": ".claude/skills/designer.md",
+      "accessCount": 4,
+      "lastAccessed": 1785259057924,
+      "type": "file"
+    },
+    {
+      "path": "tests/e2e/playwright/home.spec.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785109328702,
+      "type": "file"
+    },
+    {
+      "path": "tests/integration/smoke.int.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785109335685,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/top-page.md",
+      "accessCount": 3,
+      "lastAccessed": 1785109481417,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/course-detail.md",
+      "accessCount": 3,
+      "lastAccessed": 1785109483534,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/school-access.md",
+      "accessCount": 3,
+      "lastAccessed": 1785109483663,
+      "type": "file"
+    },
+    {
+      "path": "lib/storage.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785124291258,
+      "type": "file"
+    },
+    {
+      "path": "lib/mail.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785124291489,
+      "type": "file"
+    },
+    {
+      "path": "tests/unit/design-tokens.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1785107461529,
+      "type": "file"
+    },
+    {
+      "path": "tests/e2e/specs/TEMPLATE.md",
+      "accessCount": 2,
+      "lastAccessed": 1785107463502,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.node.json",
+      "accessCount": 1,
+      "lastAccessed": 1785068034827,
+      "type": "file"
+    },
+    {
+      "path": "next-env.d.ts",
+      "accessCount": 1,
+      "lastAccessed": 1785068637285,
+      "type": "file"
+    },
+    {
+      "path": "postcss.config.js",
+      "accessCount": 1,
+      "lastAccessed": 1785068641790,
+      "type": "file"
+    },
+    {
+      "path": ".eslintrc.json",
+      "accessCount": 1,
+      "lastAccessed": 1785068642376,
+      "type": "file"
+    },
+    {
+      "path": "scripts/dev-db.sh",
+      "accessCount": 1,
+      "lastAccessed": 1785072141557,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

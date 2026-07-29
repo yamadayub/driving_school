@@ -1,0 +1,545 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1785291554807,
+  "projectRoot": "/Users/yosuke/dev/driving_school",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "15.1.4",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "19.0.0",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.0.0",
+        "category": "frontend"
+      },
+      {
+        "name": "@playwright/test",
+        "version": "1.49.1",
+        "category": "testing"
+      },
+      {
+        "name": "vitest",
+        "version": "2.1.8",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cat >> docs/phase-status.md <<'EOF'\n\n---\n\n## P3-c1 完了記録（2026-07-29 / 差し戻し3回 → 再検収通過）\n\n### 品質ゲート実測\n\n| ゲート | 結果 |\n|--------|------|\n| `pnpm type-check` / `pnpm lint` | ✅ エラー・warning 0 |\n| `pnpm test:unit` | ✅ 54ファイル / **827件** 全パス |\n| `pnpm test:integration` | ✅ 9ファイル / **87件** 全パス |\n| `pnpm build` | ✅ 成功 |\n| `CI=1 pnpm test:e2e` | ✅ **166 passed / 0 failed / 6 skipped / flaky 0** |\n| Senior Review | ✅ **Approve**（`docs/review-p3c1-code-re-2026-07-29.md`）。未クローズ 0 件 |\n| Security Audit | ✅ **新規 Critical 0 / High 0**（`docs/security-p3c1-audit-2026-07-29.md`）。P3-c2 着手可 |\n\n### クローズした ID\n\n| ID | 内容 |\n|----|------|\n| SEC-058 | `withPublicMutation` の構築時検査を半端な軸構成へ拡大 |\n| SEC-060 | 実在しない `courseId` を 422 に。`P2003` を単語境界で分類し、未分類だけ 500 |\n| SEC-061 / SEC-069 | `TRUST_PROXY` を導入し本番判定を `VERCEL` から分離。**非 Vercel 本番が縮退構成から抜け出せる**ようになった |\n| SEC-068 | 未検証の印を payload から **HKDF ラベル**へ移動（payload はバイト単位で不変）。状態オラクルを解消 |\n| SEC-046 | `withCronAuth` の試行回数制限（**抑制ではなく検知**。総当たりの速度は落ちない旨を明記） |\n| SEC-064 | Prisma エラーログを `lib/pii-log.ts` の1点へ合流。`message` を返さない |\n| SEC-065 | `/privacy` に発信元 IP の保持を明記し `RETENTION_PERIODS` へ |\n| SEC-070 | SEC-057 の上界を定数から導出する形へ。実測が上界に張り付くことまで固定 |\n| SEC-059 | **対象外**（P3-b の RV-P3B-006 でクローズ済みと確認） |\n| SEC-063 | **明示的に繰越**（理由と訂正後の契約を記録。`security-audit.md` P3c-9 行に明記） |\n\n### P3-c1 の教訓 — **「測っていない継ぎ目」が4段階で見つかった**\n\n差し戻しのたびに一段深い継ぎ目が露出した。**すべて「テストは green・型検査も通る・しかし本番では効かない」型**であり、P3-b の RV-P3B-001（Turnstile が全ゲート通過のまま機能不成立）と同型である。\n\n| 段階 | 指摘 | 内容 |\n|------|------|------|\n| 1 | REV-P3C1-001 | **受け口の悪用** — `hasVerifiedSession` の契約が SEC-057 を再び開く |\n| 2 | NEW-001 | **受け口が呼ばれることを測っていない** — 正典関数は完璧でも結線が無く、本番では常に `undefined` |\n| 3 | CR-001 | **呼び出し元がその状態を作らない** — 結線しても `/apply` が更新窓を見ないので要求が到達しない |\n| 4 | Security §1.5 | **そもそも到達しない受け口** — 印付き Cookie には `verifyFormSessionValue` が必ず `null` を返すため、`hasVerifiedSession` は原理的に到達しない |\n\n段階4は実装側と監査側が独立に発見し、**どちらも「達成した」と言わずに訂正した**。\n\n**もう1つの教訓（自動化された網では守れない性質）**: 達成不能なテスト1件について、Impl Agent はテストを変更せずエスカレーションし、通すための抜け道（`CHALLENGE_TOKEN_TTL_MS` を 9 秒に下げる）を **REV-P3C1-002 の「増幅率1」契約を壊す**という理由で却下した。テスト自身はこの抜け道を捕捉できない。閾値を動かして直ったことにしない判断が要る。\n\n### SEC-067 の正確な状態（**過大報告しないための記録**）\n\n| 項目 | 状態 |\n|------|------|\n| **自己維持の切断** | **未是正**。印付き Cookie には `verifyFormSessionValue` が必ず `null` を返す（SEC-068 の設計上そうあるべき）ため `hasVerifiedSession` は原理的に到達しない。そこを true にすると「ロックアウトの恒久化」になるので、この挙動自体は正しい |\n| 有効 Cookie を使った無コスト枠の収穫（REV-P3C1-001） | **是正済み・結線済み**（監査プローブ実測: 有効 Cookie を200回提示 → 追加取得 **0枚**） |\n| 更新窓（NEW-003 / CR-001） | **是正済み・結線済み** |\n\n**残る攻撃可能性**: (A) 縮退構成で第三者が `GET /api/form-session` を **10回/10分**送るだけで、その窓の新規来訪者全員が Tier B（**CAPTCHA では抜けられない**——Turnstile 検証は Tier B 判定より後で一度も評価されない）。(B) 攻撃者が手を引いた後も被害者の再試行だけで締め出しが継続（監査実測: 15人中5人が締め出されたまま）。\n**重大度 Medium 据え置き**（想定配備の Vercel は `trusted=true` で印が付かない）。**非 Vercel 配備を選んだ時点で High = リリースブロッカーへ昇格。**\n\n---\n\n## P3-c2 の完了条件（申し送り）\n\n1. **SEC-067 の回復経路（`challengeToken`）の結線を P3-c2 のスコープに明示的に入れること。** 自己維持は「印付き利用者が回復できる」ようになって初めて切れる（`hasVerifiedSession` では原理的に切れないことが実測で確定）。`uploads` は同じ Tier B 判定を使うため。\n2. **⚠️ E2E は WebKit でフォームセッション Cookie の経路を一度も通っていない。** WebKit は `http://localhost` で `__Host-`（Secure）Cookie を受理しないため、**WebKit の E2E は常に「Cookie 無し」経路**を走っている。`uploads` は Cookie 軸に依存するので、**uploads の E2E を書く前に「E2E を HTTPS で回す」か「WebKit を明示的に対象外にする」かを決めること。** 黙って「3ブラウザで green」と記録すると、実際には2ブラウザでしか測っていない防御を「測った」ことにしてしまう。\n3. **RV-P3B-019（Must Fix / P3-b 由来）**: 送信が成功する経路を通す E2E が 1 本も無い。現構成のままでは原理的に書けないため、「上限を緩める」ではなく「軸を分ける」形で設計すること。\n4. `maxBodyBytes` を上げる際は、上げた値で `tests/unit/public-guard-body-stream.test.ts` を回すこと（既定値でしか測っていない）。\n5. 既存の P3c-11（署名付きURLの有効期限・`objectKey` の推測不可能性・MIME/マジックバイト検証・orphan 回収）ほか、`docs/security-audit.md` §F の残項目。\nEOF\necho OK",
+    "testCommand": "cat >> docs/phase-status.md <<'EOF'\n\n---\n\n## P3-c1 完了記録（2026-07-29 / 差し戻し3回 → 再検収通過）\n\n### 品質ゲート実測\n\n| ゲート | 結果 |\n|--------|------|\n| `pnpm type-check` / `pnpm lint` | ✅ エラー・warning 0 |\n| `pnpm test:unit` | ✅ 54ファイル / **827件** 全パス |\n| `pnpm test:integration` | ✅ 9ファイル / **87件** 全パス |\n| `pnpm build` | ✅ 成功 |\n| `CI=1 pnpm test:e2e` | ✅ **166 passed / 0 failed / 6 skipped / flaky 0** |\n| Senior Review | ✅ **Approve**（`docs/review-p3c1-code-re-2026-07-29.md`）。未クローズ 0 件 |\n| Security Audit | ✅ **新規 Critical 0 / High 0**（`docs/security-p3c1-audit-2026-07-29.md`）。P3-c2 着手可 |\n\n### クローズした ID\n\n| ID | 内容 |\n|----|------|\n| SEC-058 | `withPublicMutation` の構築時検査を半端な軸構成へ拡大 |\n| SEC-060 | 実在しない `courseId` を 422 に。`P2003` を単語境界で分類し、未分類だけ 500 |\n| SEC-061 / SEC-069 | `TRUST_PROXY` を導入し本番判定を `VERCEL` から分離。**非 Vercel 本番が縮退構成から抜け出せる**ようになった |\n| SEC-068 | 未検証の印を payload から **HKDF ラベル**へ移動（payload はバイト単位で不変）。状態オラクルを解消 |\n| SEC-046 | `withCronAuth` の試行回数制限（**抑制ではなく検知**。総当たりの速度は落ちない旨を明記） |\n| SEC-064 | Prisma エラーログを `lib/pii-log.ts` の1点へ合流。`message` を返さない |\n| SEC-065 | `/privacy` に発信元 IP の保持を明記し `RETENTION_PERIODS` へ |\n| SEC-070 | SEC-057 の上界を定数から導出する形へ。実測が上界に張り付くことまで固定 |\n| SEC-059 | **対象外**（P3-b の RV-P3B-006 でクローズ済みと確認） |\n| SEC-063 | **明示的に繰越**（理由と訂正後の契約を記録。`security-audit.md` P3c-9 行に明記） |\n\n### P3-c1 の教訓 — **「測っていない継ぎ目」が4段階で見つかった**\n\n差し戻しのたびに一段深い継ぎ目が露出した。**すべて「テストは green・型検査も通る・しかし本番では効かない」型**であり、P3-b の RV-P3B-001（Turnstile が全ゲート通過のまま機能不成立）と同型である。\n\n| 段階 | 指摘 | 内容 |\n|------|------|------|\n| 1 | REV-P3C1-001 | **受け口の悪用** — `hasVerifiedSession` の契約が SEC-057 を再び開く |\n| 2 | NEW-001 | **受け口が呼ばれることを測っていない** — 正典関数は完璧でも結線が無く、本番では常に `undefined` |\n| 3 | CR-001 | **呼び出し元がその状態を作らない** — 結線しても `/apply` が更新窓を見ないので要求が到達しない |\n| 4 | Security §1.5 | **そもそも到達しない受け口** — 印付き Cookie には `verifyFormSessionValue` が必ず `null` を返すため、`hasVerifiedSession` は原理的に到達しない |\n\n段階4は実装側と監査側が独立に発見し、**どちらも「達成した」と言わずに訂正した**。\n\n**もう1つの教訓（自動化された網では守れない性質）**: 達成不能なテスト1件について、Impl Agent はテストを変更せずエスカレーションし、通すための抜け道（`CHALLENGE_TOKEN_TTL_MS` を 9 秒に下げる）を **REV-P3C1-002 の「増幅率1」契約を壊す**という理由で却下した。テスト自身はこの抜け道を捕捉できない。閾値を動かして直ったことにしない判断が要る。\n\n### SEC-067 の正確な状態（**過大報告しないための記録**）\n\n| 項目 | 状態 |\n|------|------|\n| **自己維持の切断** | **未是正**。印付き Cookie には `verifyFormSessionValue` が必ず `null` を返す（SEC-068 の設計上そうあるべき）ため `hasVerifiedSession` は原理的に到達しない。そこを true にすると「ロックアウトの恒久化」になるので、この挙動自体は正しい |\n| 有効 Cookie を使った無コスト枠の収穫（REV-P3C1-001） | **是正済み・結線済み**（監査プローブ実測: 有効 Cookie を200回提示 → 追加取得 **0枚**） |\n| 更新窓（NEW-003 / CR-001） | **是正済み・結線済み** |\n\n**残る攻撃可能性**: (A) 縮退構成で第三者が `GET /api/form-session` を **10回/10分**送るだけで、その窓の新規来訪者全員が Tier B（**CAPTCHA では抜けられない**——Turnstile 検証は Tier B 判定より後で一度も評価されない）。(B) 攻撃者が手を引いた後も被害者の再試行だけで締め出しが継続（監査実測: 15人中5人が締め出されたまま）。\n**重大度 Medium 据え置き**（想定配備の Vercel は `trusted=true` で印が付かない）。**非 Vercel 配備を選んだ時点で High = リリースブロッカーへ昇格。**\n\n---\n\n## P3-c2 の完了条件（申し送り）\n\n1. **SEC-067 の回復経路（`challengeToken`）の結線を P3-c2 のスコープに明示的に入れること。** 自己維持は「印付き利用者が回復できる」ようになって初めて切れる（`hasVerifiedSession` では原理的に切れないことが実測で確定）。`uploads` は同じ Tier B 判定を使うため。\n2. **⚠️ E2E は WebKit でフォームセッション Cookie の経路を一度も通っていない。** WebKit は `http://localhost` で `__Host-`（Secure）Cookie を受理しないため、**WebKit の E2E は常に「Cookie 無し」経路**を走っている。`uploads` は Cookie 軸に依存するので、**uploads の E2E を書く前に「E2E を HTTPS で回す」か「WebKit を明示的に対象外にする」かを決めること。** 黙って「3ブラウザで green」と記録すると、実際には2ブラウザでしか測っていない防御を「測った」ことにしてしまう。\n3. **RV-P3B-019（Must Fix / P3-b 由来）**: 送信が成功する経路を通す E2E が 1 本も無い。現構成のままでは原理的に書けないため、「上限を緩める」ではなく「軸を分ける」形で設計すること。\n4. `maxBodyBytes` を上げる際は、上げた値で `tests/unit/public-guard-body-stream.test.ts` を回すこと（既定値でしか測っていない）。\n5. 既存の P3c-11（署名付きURLの有効期限・`objectKey` の推測不可能性・MIME/マジックバイト検証・orphan 回収）ほか、`docs/security-audit.md` §F の残項目。\nEOF\necho OK",
+    "lintCommand": "pnpm lint",
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "dev": "next dev",
+      "build": "prisma generate && next build",
+      "start": "next start",
+      "lint": "next lint",
+      "type-check": "tsc --noEmit",
+      "test": "pnpm test:unit && pnpm test:integration && pnpm test:e2e",
+      "test:unit": "vitest run --config vitest.config.ts",
+      "test:unit:watch": "vitest --config vitest.config.ts",
+      "test:integration": "vitest run --config vitest.integration.config.ts",
+      "test:e2e": "playwright test",
+      "test:e2e:ui": "playwright test --ui",
+      "test:e2e:debug": "playwright test --debug",
+      "db:generate": "prisma generate",
+      "db:validate": "prisma validate",
+      "db:migrate": "prisma migrate dev",
+      "db:seed": "tsx prisma/seed.ts",
+      "postinstall": "prisma generate"
+    }
+  },
+  "conventions": {
+    "namingStyle": "camelCase",
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app",
+      "components",
+      "docs",
+      "lib",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 2,
+      "lastAccessed": 1785291554787,
+      "keyFiles": [
+        "globals.css",
+        "layout.tsx"
+      ]
+    },
+    "components": {
+      "path": "components",
+      "purpose": "UI components",
+      "fileCount": 0,
+      "lastAccessed": 1785291554789,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 47,
+      "lastAccessed": 1785291554790,
+      "keyFiles": [
+        "business-spec.md",
+        "current-site-analysis.md",
+        "dev-database.md",
+        "functional-spec.md",
+        "handoff-p2-e2e.md"
+      ]
+    },
+    "lib": {
+      "path": "lib",
+      "purpose": "Library code",
+      "fileCount": 39,
+      "lastAccessed": 1785291554791,
+      "keyFiles": [
+        "age-eligibility.ts",
+        "application-idempotency.ts",
+        "apply-draft.ts",
+        "auth-guard.ts",
+        "badge.ts"
+      ]
+    },
+    "playwright-report": {
+      "path": "playwright-report",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785291554791,
+      "keyFiles": [
+        "index.html"
+      ]
+    },
+    "prisma": {
+      "path": "prisma",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1785291554791,
+      "keyFiles": [
+        "schema.prisma",
+        "seed.ts"
+      ]
+    },
+    "prompts": {
+      "path": "prompts",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1785291554792,
+      "keyFiles": [
+        "step3-functional-design.md",
+        "step4-tdd-cycle.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 3,
+      "lastAccessed": 1785291554792,
+      "keyFiles": [
+        "dev-db.sh",
+        "verify-p3b.ts",
+        "verify-semaphore-p3a.ts"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1785291554792,
+      "keyFiles": []
+    },
+    "test-results": {
+      "path": "test-results",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1785291554793,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1785291554794,
+      "keyFiles": []
+    },
+    "app/api": {
+      "path": "app/api",
+      "purpose": "API routes",
+      "fileCount": 0,
+      "lastAccessed": 1785291554796,
+      "keyFiles": []
+    },
+    "playwright-report/data": {
+      "path": "playwright-report/data",
+      "purpose": "Data files",
+      "fileCount": 38,
+      "lastAccessed": 1785291554797,
+      "keyFiles": [
+        "04d9108a734d1cca97d3492242cb7e0463c86495.png",
+        "1251179c618fe85ed592a2854fc5ed71359f420c.webm",
+        "177918eff5f78968b4e776b366474cd006a34d15.md"
+      ]
+    },
+    "prisma/migrations": {
+      "path": "prisma/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 1,
+      "lastAccessed": 1785291554797,
+      "keyFiles": [
+        "migration_lock.toml"
+      ]
+    },
+    "tests/fixtures": {
+      "path": "tests/fixtures",
+      "purpose": "Test fixtures",
+      "fileCount": 2,
+      "lastAccessed": 1785291554798,
+      "keyFiles": [
+        "seed-counts.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "docs/functional-spec.md",
+      "accessCount": 163,
+      "lastAccessed": 1785275562413,
+      "type": "file"
+    },
+    {
+      "path": "docs/tech-stack.md",
+      "accessCount": 55,
+      "lastAccessed": 1785304044180,
+      "type": "file"
+    },
+    {
+      "path": "docs/business-spec.md",
+      "accessCount": 47,
+      "lastAccessed": 1785257726955,
+      "type": "file"
+    },
+    {
+      "path": "auth.ts",
+      "accessCount": 38,
+      "lastAccessed": 1785280161516,
+      "type": "file"
+    },
+    {
+      "path": "lib/env.ts",
+      "accessCount": 33,
+      "lastAccessed": 1785303945321,
+      "type": "file"
+    },
+    {
+      "path": "DESIGN.md",
+      "accessCount": 24,
+      "lastAccessed": 1785252173407,
+      "type": "file"
+    },
+    {
+      "path": "lib/kv.ts",
+      "accessCount": 20,
+      "lastAccessed": 1785306056160,
+      "type": "file"
+    },
+    {
+      "path": "prisma/seed.ts",
+      "accessCount": 18,
+      "lastAccessed": 1785205061848,
+      "type": "file"
+    },
+    {
+      "path": "playwright.config.ts",
+      "accessCount": 17,
+      "lastAccessed": 1785274498547,
+      "type": "file"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "accessCount": 16,
+      "lastAccessed": 1785257678778,
+      "type": "file"
+    },
+    {
+      "path": "middleware.ts",
+      "accessCount": 15,
+      "lastAccessed": 1785286291135,
+      "type": "file"
+    },
+    {
+      "path": "lib/db.ts",
+      "accessCount": 15,
+      "lastAccessed": 1785305962040,
+      "type": "file"
+    },
+    {
+      "path": "app/layout.tsx",
+      "accessCount": 14,
+      "lastAccessed": 1785278684219,
+      "type": "file"
+    },
+    {
+      "path": "app/page.tsx",
+      "accessCount": 13,
+      "lastAccessed": 1785149110701,
+      "type": "file"
+    },
+    {
+      "path": "app/admin/login/page.tsx",
+      "accessCount": 13,
+      "lastAccessed": 1785203263231,
+      "type": "file"
+    },
+    {
+      "path": ".claude/skills/senior-review.md",
+      "accessCount": 13,
+      "lastAccessed": 1785300052202,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 10,
+      "lastAccessed": 1785287557456,
+      "type": "file"
+    },
+    {
+      "path": "vitest.integration.config.ts",
+      "accessCount": 10,
+      "lastAccessed": 1785300363813,
+      "type": "file"
+    },
+    {
+      "path": "app/globals.css",
+      "accessCount": 9,
+      "lastAccessed": 1785252173555,
+      "type": "file"
+    },
+    {
+      "path": ".env.example",
+      "accessCount": 9,
+      "lastAccessed": 1785263597824,
+      "type": "file"
+    },
+    {
+      "path": "tests/unit/env.test.ts",
+      "accessCount": 9,
+      "lastAccessed": 1785279923024,
+      "type": "file"
+    },
+    {
+      "path": "lib/school-info.ts",
+      "accessCount": 8,
+      "lastAccessed": 1785289084176,
+      "type": "file"
+    },
+    {
+      "path": "lib/design-tokens.ts",
+      "accessCount": 7,
+      "lastAccessed": 1785149135705,
+      "type": "file"
+    },
+    {
+      "path": "lib/mail.ts",
+      "accessCount": 7,
+      "lastAccessed": 1785285763363,
+      "type": "file"
+    },
+    {
+      "path": "docs/dev-database.md",
+      "accessCount": 6,
+      "lastAccessed": 1785147679786,
+      "type": "file"
+    },
+    {
+      "path": ".env",
+      "accessCount": 6,
+      "lastAccessed": 1785205976127,
+      "type": "file"
+    },
+    {
+      "path": "next.config.mjs",
+      "accessCount": 6,
+      "lastAccessed": 1785262016728,
+      "type": "file"
+    },
+    {
+      "path": "docs/product-concept.md",
+      "accessCount": 5,
+      "lastAccessed": 1784464615075,
+      "type": "file"
+    },
+    {
+      "path": "docs/review-p0-spec-2026-07-19.md",
+      "accessCount": 5,
+      "lastAccessed": 1784465775933,
+      "type": "file"
+    },
+    {
+      "path": "docs/current-site-analysis.md",
+      "accessCount": 5,
+      "lastAccessed": 1785070307032,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/layout.md",
+      "accessCount": 5,
+      "lastAccessed": 1785252164158,
+      "type": "file"
+    },
+    {
+      "path": ".claude/skills/spec.md",
+      "accessCount": 5,
+      "lastAccessed": 1785259043368,
+      "type": "file"
+    },
+    {
+      "path": "vitest.config.ts",
+      "accessCount": 5,
+      "lastAccessed": 1785287557864,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.json",
+      "accessCount": 4,
+      "lastAccessed": 1785109350389,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/course-comparison.md",
+      "accessCount": 4,
+      "lastAccessed": 1785252160446,
+      "type": "file"
+    },
+    {
+      "path": "tailwind.config.ts",
+      "accessCount": 4,
+      "lastAccessed": 1785252178929,
+      "type": "file"
+    },
+    {
+      "path": ".claude/skills/designer.md",
+      "accessCount": 4,
+      "lastAccessed": 1785259057924,
+      "type": "file"
+    },
+    {
+      "path": "tests/e2e/playwright/home.spec.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785109328702,
+      "type": "file"
+    },
+    {
+      "path": "tests/integration/smoke.int.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785109335685,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/top-page.md",
+      "accessCount": 3,
+      "lastAccessed": 1785109481417,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/course-detail.md",
+      "accessCount": 3,
+      "lastAccessed": 1785109483534,
+      "type": "file"
+    },
+    {
+      "path": "docs/ui-design/school-access.md",
+      "accessCount": 3,
+      "lastAccessed": 1785109483663,
+      "type": "file"
+    },
+    {
+      "path": "lib/storage.ts",
+      "accessCount": 3,
+      "lastAccessed": 1785124291258,
+      "type": "file"
+    },
+    {
+      "path": "tests/e2e/specs/TEMPLATE.md",
+      "accessCount": 3,
+      "lastAccessed": 1785277753026,
+      "type": "file"
+    },
+    {
+      "path": "tests/unit/design-tokens.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1785107461529,
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.node.json",
+      "accessCount": 1,
+      "lastAccessed": 1785068034827,
+      "type": "file"
+    },
+    {
+      "path": "next-env.d.ts",
+      "accessCount": 1,
+      "lastAccessed": 1785068637285,
+      "type": "file"
+    },
+    {
+      "path": "postcss.config.js",
+      "accessCount": 1,
+      "lastAccessed": 1785068641790,
+      "type": "file"
+    },
+    {
+      "path": ".eslintrc.json",
+      "accessCount": 1,
+      "lastAccessed": 1785068642376,
+      "type": "file"
+    },
+    {
+      "path": "scripts/dev-db.sh",
+      "accessCount": 1,
+      "lastAccessed": 1785072141557,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

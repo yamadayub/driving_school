@@ -1,0 +1,290 @@
+// 岩滝・網野自動車教習所 — Prisma schema
+// 出典: docs/functional-spec.md (データモデル §2 / 一覧 §4.8 / インデックス §4.9)
+//       docs/tech-stack.md (§1.2 サーバー限定DBアクセス / §2.1 Vercel Postgres)
+// 注意: DBアクセスはサーバー限定。クライアントは公開DBキーを持たない。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Prisma pooled 接続（pgbouncer）。tech-stack §2.1
+  url       = env("POSTGRES_PRISMA_URL")
+  // migrate 用 direct 接続
+  directUrl = env("POSTGRES_URL_NON_POOLING")
+}
+
+// ---------------------------------------------------------------------------
+// Enums（functional-spec の型定義に対応）
+// ---------------------------------------------------------------------------
+
+enum School {
+  IWATAKI
+  AMINO
+}
+
+enum CourseFormat {
+  TSUGAKU // 通学
+  GASSHUKU // 合宿
+}
+
+enum Transmission {
+  AT
+  MT
+}
+
+// REV-005: LICENSE=免許（比較UI対象） / DRONE・KENKI=スクール / ADDITIONAL=追加講習
+enum CourseCategory {
+  LICENSE
+  DRONE
+  KENKI
+  ADDITIONAL
+}
+
+// REV-007: 免許種別は enum。表示名は licenseTypeLabel で解決し表記ゆれを排除
+enum LicenseType {
+  ORDINARY // 普通車
+  SEMI_MEDIUM // 準中型
+  MEDIUM // 中型
+  LARGE // 大型
+  ORDINARY_2ND // 普通二種
+  LARGE_2ND // 大型二種
+  TOWING // けん引
+  LARGE_SPECIAL // 大型特殊
+  MOTORCYCLE // 普通自動二輪
+}
+
+// REV-006: 記事カテゴリ実体。'ALL' は廃止。COMMON=両校共通告知
+enum NewsCategory {
+  IWATAKI
+  AMINO
+  DRONE
+  KENKI
+  COMMON
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED // F-014: 一度公開したが取り下げた状態（SPEC-002。公開クエリからは除外）
+}
+
+enum FaqCategory {
+  SCHOOL // 学校について
+  COURSE // 教習車種・プラン
+  PAYMENT // 料金・支払い
+  OTHER // その他
+}
+
+enum ApplicationType {
+  APPLICATION // 申込
+  INQUIRY // 問い合わせ
+}
+
+enum ApplicationStatus {
+  NEW
+  IN_PROGRESS
+  DONE
+}
+
+enum PhotoSide {
+  FRONT
+  BACK
+}
+
+// F-011: SupplementalChatRule のソース種別（FAQは含めない = Faqを直接参照するため）
+enum ChatSourceType {
+  COURSE
+  ACCESS
+}
+
+enum AdminRole {
+  ADMIN
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+// F-002/F-003/F-015/F-022 — Course（category で免許/ドローン/建機/追加講習を包含, REV-005）
+model Course {
+  id String @id @default(cuid())
+
+  category CourseCategory
+
+  // REV-03: licenseType/licenseTypeLabel は category=LICENSE 専用。非LICENSEは null
+  licenseType      LicenseType?
+  licenseTypeLabel String?
+  transmission     Transmission? // ORDINARY のみ AT/MT。他は null
+  programLabel     String? // category≠LICENSE のスクール/講習名。LICENSEは null
+
+  format   CourseFormat? // 通学/合宿。スクール系で無意味なら null
+  minDays  Int // 最短日数（>0、アプリ層で検証）
+  priceFrom Int // 料金〜（税込, >0、アプリ層で検証）
+
+  schools     School[] // 対応校（1〜2）
+  subsidyTags String[] // 給付金/助成金タグ
+  description String?
+
+  published Boolean @default(false) // REV-003: 物理削除禁止（論理削除）
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applications Application[]
+
+  // §4.9 インデックス戦略
+  @@index([category, published, sortOrder])
+  @@index([published, format])
+}
+
+// F-004/F-005/F-014 — News
+model News {
+  id       String        @id @default(cuid())
+  title    String
+  body     String // 本文（Markdown/リッチテキスト）
+  category NewsCategory
+  status   PublishStatus @default(DRAFT)
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([category, status, publishedAt])
+}
+
+// F-006/F-016/F-011 — Faq（FAQ由来ナレッジの単一の真実源, REV-001）
+model Faq {
+  id        String      @id @default(cuid())
+  question  String
+  answer    String
+  category  FaqCategory
+  keywords  String[] // ChatBot照合用キーワード
+  published Boolean     @default(false)
+  sortOrder Int         @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([published, category, sortOrder])
+}
+
+// F-008/F-010/F-017 — Application（申込・問い合わせ）
+model Application {
+  id            String  @id @default(cuid())
+  receiptNumber String  @unique // REV-011 / SPEC-013: ULID（日次連番は当日の受付件数を漏らすため不可）
+  idempotencyKey String @unique // REV-011: 重複送信排除
+
+  type ApplicationType
+
+  // --- APPLICATION 専用（INQUIRY では null/空, REV-002）---
+  plans              String[]
+  courseId           String?
+  course             Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull) // REV-003
+  courseNameSnapshot String? // REV-003: 申込時点のコース表示名を非正規化保存
+  priceFromSnapshot  Int? // REV-003: 申込時点の料金を非正規化保存
+  school             School?
+  format             CourseFormat?
+
+  // --- 共通 ---
+  name      String
+  nameKana  String
+  birthDate DateTime
+  gender    String?
+  email     String
+  phone     String
+
+  // --- APPLICATION 専用 ---
+  postalCode        String?
+  address           String?
+  buildingName      String?
+  licenseRevoked    Boolean? // REV-002: APPLICATION時のみ必須。INQUIRYはnull
+  licenseRevokedNote String?
+  currentLicenses   String[]
+  licensePhotos     LicensePhoto[] // REV-002/004: objectKeyのみ保持
+  preferredStartMonth String?
+  preferredTimeSlot   String?
+  paymentMethod       String?
+
+  // --- 共通 ---
+  firstTime       Boolean?
+  referralSources String[]
+  message         String?
+  privacyConsent  Boolean // true必須（アプリ層で検証）
+  status          ApplicationStatus @default(NEW)
+
+  // SPEC-014: status が実際に変化したときのみ更新する（F-017 PATCH / AC-017-7）。
+  // 保持期間「status=DONE から30日」の起算点（functional-spec §4.12 AC-PII-5）。
+  // updatedAt は @updatedAt でメモ追記等でも動くため起算点には使えない。
+  // ⚠️ マイグレーション未作成（対応単位 P3-d。docs/phase-status.md の DB ドリフト注記を参照）。
+  //    このフィールドを参照するコードを書く前に必ずマイグレーションを作成すること。
+  statusChangedAt DateTime?
+
+  // SPEC-017: 冪等再送の照合用（AC-010-4 / functional-spec §4.11 Tier A）。
+  // フォームセッション Cookie の sid の HMAC-SHA256（FORM_SESSION_SECRET から照合専用ラベルで HKDF 導出した鍵）。
+  // 生の sid は保存しない（sid は資格情報的な性質を持つ）。比較は定数時間で行い、null は「不一致」として扱う。
+  // ⚠️ マイグレーション未作成（statusChangedAt と同じ1回のマイグレーションにまとめる。対応単位 P3-b 着手前）。
+  sessionIdHash String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, status, createdAt])
+  @@index([status, statusChangedAt]) // 保持期間バッチの対象抽出（AC-PII-5）
+}
+
+// F-009/F-018 — LicensePhoto（免許証写真。公開URLは保持せず objectKey のみ）
+model LicensePhoto {
+  id            String    @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  objectKey   String // サーバー生成の非公開ストレージキー（公開URLではない）
+  side        PhotoSide
+  contentType String
+  size        Int
+  uploadedAt  DateTime @default(now())
+
+  @@index([applicationId])
+}
+
+// F-009 — UploadToken（objectKey とバインド、単回使用, REV-004）
+model UploadToken {
+  id          String   @id @default(cuid())
+  token       String   @unique // 署名付き・予測不能
+  objectKey   String // バインド対象
+  contentType String
+  maxSize     Int
+  consumed    Boolean  @default(false) // 申込紐付けで true
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+// F-011 — SupplementalChatRule（FAQに載らない料金/アクセス補助のみ, REV-001）
+model SupplementalChatRule {
+  id          String         @id @default(cuid())
+  intent      String // 例: price_lookup, access, bus
+  patterns    String[]
+  reply       String
+  sourceType  ChatSourceType // FAQ は含めない（Faqを直接参照するため）
+  sourceRefId String?
+  linkUrl     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// F-012 — AdminUser（管理者）
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  role         AdminRole @default(ADMIN)
+  passwordHash String? // Credentials 方式（デモ）用。方式は F-012 実装時に確定
+  createdAt    DateTime  @default(now())
+}

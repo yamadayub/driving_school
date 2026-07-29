@@ -1,0 +1,53 @@
+{
+  "agents": [
+    {
+      "agent_id": "asenior-p3b-cb27c7180ed01641",
+      "agent_type": "senior-p3b",
+      "started_at": "2026-07-29T03:02:58.438Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-29T03:09:39.875Z",
+      "duration_ms": 401437
+    },
+    {
+      "agent_id": "asecurity-sec057-e5d714f7c605c8aa",
+      "agent_type": "security-sec057",
+      "started_at": "2026-07-29T06:15:13.295Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-29T06:25:38.375Z",
+      "duration_ms": 625080
+    },
+    {
+      "agent_id": "atest-p3c1-e049a1d5a61d0ab3",
+      "agent_type": "test-p3c1",
+      "started_at": "2026-07-29T05:25:14.519Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-29T05:35:31.151Z",
+      "duration_ms": 616632
+    },
+    {
+      "agent_id": "asenior-p3c1-tests-1e39f6fe8f2f2108",
+      "agent_type": "senior-p3c1-tests",
+      "started_at": "2026-07-29T06:43:30.377Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-29T06:47:58.874Z",
+      "duration_ms": 268497
+    },
+    {
+      "agent_id": "aimpl-p3c1-efbcc9419801feeb",
+      "agent_type": "impl-p3c1",
+      "started_at": "2026-07-29T06:30:48.205Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-29T06:37:54.563Z",
+      "duration_ms": 426358
+    }
+  ],
+  "total_spawned": 14,
+  "total_completed": 133,
+  "total_failed": 0,
+  "last_updated": "2026-07-29T06:52:39.769Z"
+}

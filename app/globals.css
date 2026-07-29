@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Next.js のルート通知要素を非表示にする。
+ * Next 15 では `<next-route-announcer>` カスタム要素の **Shadow DOM 内**に role="alert" の
+ * `#__next-route-announcer__` を持つ。ログイン失敗時にサーバー描画する汎用エラー (role="alert") 等と
+ * 二重化して「単一の alert」前提（支援技術・E2E: getByRole('alert') は Shadow を貫通して2件検出）を壊す。
+ * Shadow 内要素は外部 CSS で直接指定できないため、ライト DOM 側のホスト要素を非表示にして
+ * Shadow サブツリーごとアクセシビリティツリーから除外する。
+ * 本要素はページ<title>変更のSPA読み上げ補助であり、各ページの固有<title>・見出し構造で文脈は担保される。
+ */
+next-route-announcer {
+  display: none !important;
+}
+
+/*
+ * デザイントークン（DESIGN.md）。
+ *
+ * フォント方針（DESIGN §3.1）: 本番は next/font/google で Zen Kaku Gothic New / Noto Sans JP を
+ * セルフホストし、--font-zen-kaku-gothic-new / --font-noto-sans-jp を app/layout.tsx から注入する。
+ * ただし本スキャフォールド環境は Google Fonts への外部フェッチ不可（ビルド時 ETIMEDOUT）のため、
+ * 下記 :root で両変数をフォント名リテラルとして定義し、OS標準ゴシックのフォールバックに委ねている。
+ * ネットワーク到達可能な環境（Vercel/CI）で next/font を有効化する手順は app/layout.tsx を参照。
+ */
+:root {
+  /* next/font 無効時のフォールバック定義（有効化時は layout.tsx が上書き注入する） */
+  --font-zen-kaku-gothic-new: 'Zen Kaku Gothic New';
+  --font-noto-sans-jp: 'Noto Sans JP';
+
+  /* Typography (DESIGN §3.3) */
+  --font-heading: var(--font-zen-kaku-gothic-new), system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+  --font-body: var(--font-noto-sans-jp), system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+
+  /* Color (DESIGN §2) — CSS変数としても公開（Tailwind外の利用向け） */
+  --color-primary: #1d4ed8;
+  --color-accent: #c2410c;
+  --color-text-primary: #111827;
+  --color-canvas: #f8fafc;
+  --color-surface: #ffffff;
+}
+
+@layer base {
+  html {
+    /* DESIGN §3.6 禁則・改行 */
+    overflow-wrap: break-word;
+    word-break: normal;
+    line-break: strict;
+  }
+
+  body {
+    font-family: var(--font-body);
+    color: var(--color-text-primary);
+    background-color: var(--color-canvas);
+    line-height: 1.8; /* DESIGN §3.5 本文行間 */
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'palt' 0, 'liga' 1; /* DESIGN §3.7 */
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    font-weight: 700; /* DESIGN §3.5 見出しは700で統一 */
+  }
+
+  /* 料金・数値は桁揃え（DESIGN §3.2） */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* スキップリンク（layout.md §8）: フォーカス時のみ可視化 */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 70;
+    padding: 8px 16px;
+    background: var(--color-surface);
+    color: var(--color-primary);
+    font-weight: 700;
+  }
+  .skip-link:focus {
+    left: 8px;
+    top: 8px;
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* ページ内アンカー遷移のスムーススクロール（school-access.md） */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* DESIGN §7: prefers-reduced-motion でアニメーションを無効化 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

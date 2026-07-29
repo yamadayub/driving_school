@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 全ジョブ共通の環境変数（RV-P25-004 / RV-P2R-005）。
+#
+# すべて **CI 専用のダミー値**であり、実運用の秘密ではないのでコミットしてよい。
+#  - `POSTGRES_*`: 各ジョブが立てる postgres サービスコンテナを指す。DB を使わないジョブでも
+#    定義する。`pnpm install` の postinstall（`prisma generate`）と `prisma validate` が
+#    schema の `env("POSTGRES_PRISMA_URL")` / `env("POSTGRES_URL_NON_POOLING")` を解決するため。
+#  - `AUTH_SECRET`: SEC-013 の検証を通す 32 文字以上。`next build` はページを評価するので
+#    **ビルド時にも必要**（RV-P2R-005）。
+#  - `ADMIN_*`: seed（`prisma/seed.ts` / SEC-012 の seed-guard）が必須にする管理者資格情報。
+#    値は E2E が参照する `tests/e2e/pages/admin-contract.ts` の `ADMIN_CREDENTIALS` と
+#    **一致させること**（ずれると管理系 E2E がログインできない）。
+env:
+  POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/driving_school?schema=public
+  POSTGRES_URL_NON_POOLING: postgresql://postgres:postgres@localhost:5432/driving_school?schema=public
+  POSTGRES_PRISMA_URL: postgresql://postgres:postgres@localhost:5432/driving_school?schema=public
+  AUTH_SECRET: ci-dummy-auth-secret-32chars-minimum-0123456789
+  #  - `KV_*` / `FORM_SESSION_SECRET` / `CRON_SECRET`: P3-a で本番 fail-fast の対象になったキー
+  #    （SEC-033 / AC-RL-13 / AC-PII-10）。`AUTH_SECRET` と同じく **`next build` 時にも必要**
+  #    （ビルドはページを評価するので `auth.ts` の `getServerEnv()` が走る / RV-P2R-005）。
+  #    実 KV へは接続しない。**`FORM_SESSION_SECRET` は `AUTH_SECRET` と別の値**にすること
+  #    （同一値は `lib/env.ts` が鍵の用途分離違反として拒否する）。
+  KV_REST_API_URL: https://ci-dummy-kv.upstash.io
+  KV_REST_API_TOKEN: ci-dummy-kv-token
+  FORM_SESSION_SECRET: ci-dummy-form-session-secret-0123456789abcdef
+  CRON_SECRET: ci-dummy-cron-secret-0123456789abcdefghij
+  ADMIN_EMAIL: admin@iwataki-driving-school.demo
+  ADMIN_NAME: デモ管理者
+  ADMIN_PASSWORD: admin_dev_pw
+  NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+jobs:
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm のバージョンは package.json の `packageManager`（pnpm@10.28.1）を唯一の真実源にする。
+      # ここで `version:` を併記すると action が
+      # "Multiple versions of pnpm specified" で失敗する（旧設定は version: 9 を併記していた）。
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate Prisma schema
+        # スキーマ検証のみ（実DB接続はしない）。env が解決できれば validate は通る。
+        run: pnpm exec prisma validate
+      - run: pnpm type-check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:unit
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    # 結合テストは Prisma 経由で**実 DB を読む**（件数・並び順の厳密検証）。
+    # サービスコンテナを立て、migrate + seed でローカル dev DB と同じ状態を作る。
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: driving_school
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        run: pnpm exec prisma migrate deploy
+      - name: Seed database
+        # seed-guard（SEC-012）: NODE_ENV=production では実行不可。CI は既定のまま流す。
+        run: pnpm db:seed
+      - run: pnpm test:integration
+
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [type-check, lint, unit-test, integration-test]
+    # E2E は公開ページのコンテンツ（コース件数・お知らせ）と管理者ログインを検証するため、
+    # 結合テストと同じく migrate + seed 済みの実 DB が要る。
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: driving_school
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        run: pnpm exec prisma migrate deploy
+      - name: Seed database
+        run: pnpm db:seed
+      - name: Build (prebuilt 前提の `pnpm start` で E2E を回す)
+        # `next build` はページを評価するため auth.ts の getServerEnv() が走る。
+        # AUTH_SECRET / POSTGRES_* は上の `env:` で全ジョブに注入済み（RV-P2R-005）。
+        run: pnpm build
+      - name: Install Playwright browsers
+        # playwright.config.ts の projects（chromium / firefox / webkit）すべてを実行するため
+        # 3 ブラウザとも入れる。chromium だけ入れて全 project を走らせると firefox/webkit が
+        # "browser not installed" で失敗する。
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Run E2E tests
+        # CI=1 で playwright.config.ts の webServer が `pnpm start`（prebuilt）に切り替わる。
+        # webServer はこのステップの env を継承するので、ランタイムの POSTGRES_* / AUTH_SECRET も届く。
+        run: pnpm test:e2e
+        env:
+          CI: true
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
