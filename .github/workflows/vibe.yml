@@ -48,8 +48,8 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # version は指定しない。package.json の `packageManager` が真実源であり、
+        # 両方に書くと action が「複数指定」で落ちる。
 
       - uses: actions/setup-node@v4
         with:
