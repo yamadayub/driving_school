@@ -96,11 +96,11 @@ export default async function HomePage() {
         <div className="mx-auto max-w-container">
           <SectionHeading eyebrow="NEWS" title="お知らせ" align="center" />
           {news.length === 0 ? (
-            <div className="mt-l">
+            <div className="mt-xl">
               <EmptyState message="お知らせはありません" />
             </div>
           ) : (
-            <div className="mt-l grid gap-m md:grid-cols-3">
+            <div className="mt-xl grid gap-m md:grid-cols-3">
               {news.map((n) => (
                 <NewsCard
                   key={n.id}
