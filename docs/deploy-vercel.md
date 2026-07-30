@@ -93,12 +93,28 @@ vercel env add ADMIN_PASSWORD production
 ## 4. デプロイとマイグレーション
 
 ```bash
-vercel --prod                                   # デプロイ
-POSTGRES_URL_NON_POOLING=<本番の値> pnpm exec prisma migrate deploy
+vercel --prod
 ```
 
-マイグレーションは**接続プーラを経由しない URL**（`POSTGRES_URL_NON_POOLING`）で流す。
-プーラ経由だと DDL が失敗することがある。
+**マイグレーションはデプロイ時に自動で走る。** `package.json` の `vercel-build` が
+`prisma migrate deploy` を含んでおり、Vercel は `build` より `vercel-build` を優先する。
+
+### なぜ手元から流さないのか
+
+**Vercel は Marketplace 統合（Supabase / Upstash）が注入した秘密を CLI に一切渡さない。**
+`vercel env pull` も `vercel env run` も、統合由来の変数は**空文字**で返す（手で `vercel env add`
+したものだけ値が取れる）。実測で確認済み。したがって手元から
+`prisma migrate deploy` を流すには Supabase の接続文字列を別途入手する必要があり、
+Marketplace 経由だと Supabase 側のアカウントに直接ログインできないことがある。
+
+Vercel のビルド環境には統合の変数が正しく注入されるので、そこで流すのが確実。
+
+### ローカルビルドの DB 非依存性は壊していない
+
+`build` は `prisma generate && next build` のままで、**`vercel-build` は Vercel だけが使う**。
+「DB が停止していてもビルドが成功する」という性質（REV-102）はローカル・CI とも維持される。
+
+> `migrate deploy` は適用済みのマイグレーションを飛ばすので、デプロイのたびに走っても問題ない。
 
 ### 管理者アカウントの作成（seed）
 
