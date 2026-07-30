@@ -1,107 +1,110 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * Vibe Coding コンソール（軽量レーン限定 / 開発環境のみ動作）。
+ * Vibe Coding コンソール。
  *
- * 指示を投げてローカルランナーの NDJSON 進捗を逐次表示する。
- * **`data-testid` と入力ラベルは変更しないこと**——このコンソール経由の変更が
- * E2E の参照先を壊さないよう、ランナー側のプロンプトでも同じ制約を課している。
+ * 指示を送ると GitHub Actions を起動し、実行状況をポーリングして表示する。
+ * コードの変更は GitHub 上で行われ、**保護パス検査 / 型チェック / 単体テスト / ビルドを
+ * すべて通ったときだけ** push される。push されると Vercel が自動デプロイする。
+ *
+ * **`data-testid` と入力ラベルは変更しないこと** — E2E が参照している。
  */
 
-type RunEvent =
-  | { type: 'branch'; branch: string }
-  | { type: 'agent'; text: string }
-  | { type: 'tool'; name: string }
-  | { type: 'denied'; tool: string; path?: string }
-  | { type: 'gate'; name: string; status: 'running' | 'pass' | 'fail'; output?: string }
-  | { type: 'commit'; branch: string; files: string[] }
-  | { type: 'done'; ok: boolean; message?: string; branch?: string; denied?: number }
-  | { type: 'error'; message: string }
+type RunState = {
+  id: number
+  status: string
+  conclusion: string | null
+  url: string
+  createdAt: string
+}
 
 const EXAMPLES = [
   'トップのヒーローの上下の余白を広げて、見出しを一回り大きくして',
   'コースカードを2列に並べて、影を少し強くして',
-  'CTAボタンをもう少し目立たせて、角を丸くして',
+  'お知らせ一覧に投稿日を大きく表示して',
 ]
+
+/** 起動直後は前回の実行が返るので、これより古い run は「新しい実行」とみなさない。 */
+const FRESH_WINDOW_MS = 120_000
 
 export function VibeConsole() {
   const [instruction, setInstruction] = useState('')
-  const [events, setEvents] = useState<RunEvent[]>([])
-  const [running, setRunning] = useState(false)
-  const logRef = useRef<HTMLDivElement | null>(null)
+  const [run, setRun] = useState<RunState | null>(null)
+  const [phase, setPhase] = useState<'idle' | 'dispatching' | 'watching' | 'done'>('idle')
+  const [error, setError] = useState('')
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const append = useCallback((event: RunEvent) => {
-    setEvents((prev) => [...prev, event])
-    queueMicrotask(() => {
-      const node = logRef.current
-      if (node) node.scrollTop = node.scrollHeight
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+
+  const fetchStatus = useCallback(async (): Promise<RunState | null> => {
+    const response = await fetch('/api/admin/vibe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'status' }),
     })
+    if (!response.ok) return null
+    const data = (await response.json()) as { run: RunState | null }
+    return data.run
   }, [])
 
+  const watch = useCallback(
+    async (startedAt: number) => {
+      const latest = await fetchStatus()
+      // 起動直後は GitHub 側に run がまだ現れないことがあるので、
+      // 「開始時刻より新しい run」が出るまでは待ち続ける。
+      const isNew = latest !== null && new Date(latest.createdAt).getTime() > startedAt - FRESH_WINDOW_MS
+      if (isNew) setRun(latest)
+
+      if (isNew && latest.status === 'completed') {
+        setPhase('done')
+        return
+      }
+      timer.current = setTimeout(() => void watch(startedAt), 5000)
+    },
+    [fetchStatus],
+  )
+
   const submit = useCallback(async () => {
-    if (!instruction.trim() || running) return
-    setRunning(true)
-    setEvents([])
+    if (!instruction.trim() || phase === 'dispatching' || phase === 'watching') return
+    setError('')
+    setRun(null)
+    setPhase('dispatching')
 
     try {
       const response = await fetch('/api/admin/vibe', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ instruction }),
+        body: JSON.stringify({ action: 'dispatch', instruction }),
       })
-
-      if (!response.ok || !response.body) {
-        const text = await response.text()
-        let message = text
-        try {
-          message = String(JSON.parse(text).error ?? text)
-        } catch {
-          /* プレーンテキストのまま出す */
-        }
-        append({ type: 'error', message: message || `失敗しました（${response.status}）` })
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string }
+        setError(data.error ?? `起動できませんでした（${response.status}）`)
+        setPhase('idle')
         return
       }
-
-      // NDJSON を行単位で読む。チャンク境界で行が割れるのでバッファを持つ。
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            append(JSON.parse(line) as RunEvent)
-          } catch {
-            /* 壊れた行は捨てる（表示のためだけの経路なので落とさない） */
-          }
-        }
-      }
-    } catch (error) {
-      append({ type: 'error', message: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setRunning(false)
+      setPhase('watching')
+      void watch(Date.now())
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+      setPhase('idle')
     }
-  }, [append, instruction, running])
+  }, [instruction, phase, watch])
+
+  const busy = phase === 'dispatching' || phase === 'watching'
 
   return (
     <div className="space-y-l">
       <div className="rounded-card border border-border bg-warning-bg p-m text-body-sm">
-        <p className="font-bold text-text-primary">見た目の変更だけを受け付けます</p>
+        <p className="font-bold text-text-primary">指示するとサイトが変わります</p>
         <p className="mt-s text-text-secondary">
-          変更できるのは画面部品（<code>components/</code>）の見た目だけです。フォームの項目追加、保存処理、
-          ページ全体の構成、配色の定義そのものはこの画面からは変更できません。変更はブランチに記録され、
-          型チェックが通った場合のみコミットされます。
+          変更は GitHub 上で行われ、
           <strong className="text-text-primary">
-            単体テストと E2E は実行されません
+            型チェック・単体テスト・ビルドがすべて通ったときだけ
           </strong>
-          ——差分を確認したうえで手元で回してください。
+          公開サイトに反映されます。認証・レート制限・データ構造・テストは変更できません。
+          完了までおよそ 2〜5 分かかります。
         </p>
       </div>
 
@@ -116,7 +119,7 @@ export function VibeConsole() {
           onChange={(event) => setInstruction(event.target.value)}
           rows={4}
           maxLength={2000}
-          disabled={running}
+          disabled={busy}
           placeholder="例: トップページの見出しをもう少し大きくして、余白を広げて"
           className="mt-s w-full rounded border border-border p-m text-body focus:border-primary focus:outline-none disabled:bg-canvas"
         />
@@ -125,7 +128,7 @@ export function VibeConsole() {
             <button
               key={example}
               type="button"
-              disabled={running}
+              disabled={busy}
               onClick={() => setInstruction(example)}
               className="rounded-pill border border-border px-m py-xs text-caption text-text-secondary hover:border-primary hover:text-primary disabled:opacity-50"
             >
@@ -139,62 +142,64 @@ export function VibeConsole() {
         type="button"
         data-testid="vibe-submit"
         onClick={submit}
-        disabled={running || !instruction.trim()}
+        disabled={busy || !instruction.trim()}
         className="rounded bg-accent px-l py-m text-label text-surface disabled:opacity-50"
       >
-        {running ? '変更中…' : 'この内容で変更する'}
+        {phase === 'dispatching' ? '起動中…' : phase === 'watching' ? '実行中…' : 'この内容で変更する'}
       </button>
 
-      {events.length > 0 && (
-        <div
-          ref={logRef}
-          data-testid="vibe-log"
-          className="max-h-[420px] overflow-y-auto rounded-card border border-border bg-canvas p-m font-mono text-caption"
-        >
-          {events.map((event, index) => (
-            <LogLine key={index} event={event} />
-          ))}
+      {error && (
+        <p data-testid="vibe-error" className="text-body-sm font-bold text-danger">
+          エラー: {error}
+        </p>
+      )}
+
+      {(busy || run) && (
+        <div data-testid="vibe-status" className="rounded-card border border-border bg-canvas p-m text-body-sm">
+          <Status phase={phase} run={run} />
+          {run && (
+            <p className="mt-s">
+              <a
+                href={run.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline"
+              >
+                実行ログを開く
+              </a>
+            </p>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function LogLine({ event }: { event: RunEvent }) {
-  switch (event.type) {
-    case 'branch':
-      return <p className="text-text-secondary">ブランチを作成: {event.branch}</p>
-    case 'agent':
-      return <p className="whitespace-pre-wrap text-text-primary">{event.text}</p>
-    case 'tool':
-      return <p className="text-text-disabled">→ {event.name}</p>
-    case 'denied':
-      return (
-        <p className="text-danger">
-          拒否: {event.tool}
-          {event.path ? ` (${event.path})` : ''} — 軽量レーンの範囲外です
-        </p>
-      )
-    case 'gate':
-      return (
-        <p className={event.status === 'fail' ? 'text-danger' : 'text-text-secondary'}>
-          {event.name}: {event.status === 'running' ? '実行中…' : event.status === 'pass' ? '通過' : '失敗'}
-          {event.status === 'fail' && event.output ? `\n${event.output}` : ''}
-        </p>
-      )
-    case 'commit':
-      return (
-        <p className="text-success">
-          コミットしました（{event.files.length} ファイル）: {event.branch}
-        </p>
-      )
-    case 'done':
-      return (
-        <p className={event.ok ? 'font-bold text-success' : 'font-bold text-danger'}>
-          {event.message ?? (event.ok ? '完了しました' : '完了しませんでした')}
-        </p>
-      )
-    case 'error':
-      return <p className="font-bold text-danger">エラー: {event.message}</p>
+function Status({ phase, run }: { phase: string; run: RunState | null }) {
+  if (phase === 'dispatching') return <p className="text-text-secondary">ワークフローを起動しています…</p>
+  if (!run) return <p className="text-text-secondary">実行の開始を待っています…</p>
+
+  if (run.status !== 'completed') {
+    return (
+      <p className="text-text-secondary">
+        実行中です（{run.status}）。コードの変更 → 保護パス検査 → 型チェック → 単体テスト →
+        ビルド の順に進みます。
+      </p>
+    )
   }
+
+  if (run.conclusion === 'success') {
+    return (
+      <p className="font-bold text-success">
+        完了しました。変更が公開サイトへ自動デプロイされます（反映まで 1〜2 分）。
+      </p>
+    )
+  }
+
+  return (
+    <p className="font-bold text-danger">
+      通りませんでした（{run.conclusion}）。**公開サイトは変更されていません。**
+      ゲートで止まったか、変更が発生しなかった可能性があります。実行ログを確認してください。
+    </p>
+  )
 }

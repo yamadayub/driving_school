@@ -1,0 +1,101 @@
+name: Vibe Coding
+
+# 管理画面からの指示でコードを変更し、ゲートを通ったときだけ push する。
+# push されると Vercel が自動デプロイし、公開サイトが更新される。
+#
+# ── 設計の要点 ────────────────────────────────────────────────
+# 1. **ルールに従う側がルールを書き換えられない。**
+#    このファイルと scripts/ は保護パスに入っており、エージェントは変更できない。
+#    加えて、管理画面が使う PAT には `workflows: write` を与えていないので、
+#    GitHub 側でもワークフロー定義の変更を拒否する（二重）。
+#
+# 2. **push は最後。** 変更 → 保護パス検査 → type-check → unit → build を
+#    すべて通ってから初めて commit & push する。どこかで落ちれば公開サイトは変わらない。
+#
+# 3. **tests/ を保護している。** ここを許すと「ゲートを通す最も簡単な方法＝テストを弱める」
+#    になり、防御を測っているテストが書き換わってもゲートは緑になる。
+
+on:
+  workflow_dispatch:
+    inputs:
+      instruction:
+        description: '変更したい内容（日本語で可）'
+        required: true
+        type: string
+
+# `contents: write` のみ。`workflows: write` は与えない。
+permissions:
+  contents: write
+
+concurrency:
+  # 同時に走らせない。並行実行すると push が競合し、後勝ちで変更が消える。
+  group: vibe-coding
+  cancel-in-progress: false
+
+jobs:
+  vibe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 差分を取るため全履歴が必要
+          fetch-depth: 0
+
+      - name: 比較元を記録
+        id: base
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prisma Client を生成
+        # 型チェックに必要。DB へは接続しない。
+        run: pnpm exec prisma generate
+
+      - name: エージェントを実行
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          VIBE_INSTRUCTION: ${{ inputs.instruction }}
+        run: node scripts/vibe-agent.mjs
+
+      - name: 保護パスが変更されていないか検査
+        # プロンプトでの指示は強制ではない。**結果を差分で確認する。**
+        run: node scripts/check-protected-paths.mjs ${{ steps.base.outputs.sha }}
+
+      - name: 型チェック
+        run: pnpm type-check
+
+      - name: 単体テスト
+        run: pnpm test:unit
+
+      - name: ビルド
+        # ローカルと同じく DB 非依存（vercel-build ではなく build を使う）
+        run: pnpm build
+
+      - name: コミットして push
+        env:
+          INSTRUCTION: ${{ inputs.instruction }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "変更が発生しませんでした。push しません。"
+            exit 0
+          fi
+          git config user.name  "Vibe Coding"
+          git config user.email "noreply@users.noreply.github.com"
+          git add -A
+          git commit -m "style: ${INSTRUCTION}
+
+          管理画面の Vibe Coding から生成。
+          保護パス検査 / type-check / unit / build を通過。
+          実行ログ: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          git push origin HEAD:master
