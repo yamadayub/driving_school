@@ -79,7 +79,25 @@ jobs:
         run: pnpm test:unit
 
       - name: ビルド
-        # ローカルと同じく DB 非依存（vercel-build ではなく build を使う）
+        # ローカルと同じく DB 非依存（vercel-build ではなく build を使う）。
+        #
+        # ⚠️ **以下はビルドを通すためだけのダミー値であり、本番の値ではない。**
+        # `next build` は NODE_ENV=production で走るため `lib/env.ts` の本番検証
+        #（KV / Turnstile / 秘密鍵の存在と長さ、鍵の用途分離）が発火する。
+        # CI には .env が無いのでここで与える。**外部へ接続しない**——このステップが
+        # 見ているのは「本番構成で型とビルドが通るか」だけである。
+        # 本物の値は Vercel 側にあり、実際のデプロイはそちらで行われる。
+        env:
+          NEXT_PUBLIC_SITE_URL: https://example.invalid
+          AUTH_SECRET: ci-dummy-auth-secret-not-a-real-key-000001
+          FORM_SESSION_SECRET: ci-dummy-form-session-secret-not-real-000002
+          CRON_SECRET: ci-dummy-cron-secret-not-a-real-key-000003
+          KV_REST_API_URL: https://example.invalid
+          KV_REST_API_TOKEN: ci-dummy-kv-token
+          TURNSTILE_SECRET: ci-dummy-turnstile-secret
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-dummy-turnstile-site-key
+          POSTGRES_PRISMA_URL: postgresql://ci:ci@example.invalid:5432/ci?pgbouncer=true
+          POSTGRES_URL_NON_POOLING: postgresql://ci:ci@example.invalid:5432/ci
         run: pnpm build
 
       - name: コミットして push
