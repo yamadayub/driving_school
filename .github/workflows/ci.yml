@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # ⚠️ **既定ブランチは `master`。** ここを `main` にしていた間、CI は一度も発火しなかった。
+    # 「緑だから安全」ではなく「そもそも走っていない」状態は、落ちるより気づきにくい。
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 # 全ジョブ共通の環境変数（RV-P25-004 / RV-P2R-005）。
 #
