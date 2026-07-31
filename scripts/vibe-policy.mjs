@@ -95,3 +95,36 @@ export const WRITE_ALLOWED_DESCRIPTION = [
   'lib/design-tokens.ts',
   'DESIGN.md',
 ].join(' / ')
+
+/**
+ * **`app/` 配下に新規ファイルを作らせない**（SEC-098）。
+ *
+ * `app/(public)/**\/*.tsx` は「既存ページの見た目を直す」ために許している。しかし
+ * App Router では **`page.tsx` を 1 枚置くだけで新しい公開URLが生まれる**。それはサーバー
+ * コンポーネントとして本番で実行されるので、`process.env` を描画すれば**未認証の第三者が
+ * 秘密を読める**。再監査は実際にビルド・起動・curl まで通し、`AUTH_SECRET` の取得を実証した。
+ * type-check も unit も build も、これを異常とは判定しない。
+ *
+ * 既存ファイルの**変更**は許し、**追加**だけを禁じる。見た目の修正に新しい経路は要らない。
+ */
+export function isAddAllowed(unix) {
+  return typeof unix === 'string' && !/^app\//.test(unix)
+}
+
+/**
+ * ソース中の「秘密を読む式」を集める。`NEXT_PUBLIC_` は定義上ブラウザへ出るので除く。
+ *
+ * ⚠️ **既存の参照まで禁止してはいけない。** `app/(public)/apply/page.tsx` は正当に
+ * `process.env.FORM_SESSION_SECRET` を使っている。呼び出し側は**base に無かった参照が
+ * 増えたときだけ**違反とすること。
+ */
+export function secretEnvRefs(source) {
+  const refs = new Set()
+  if (typeof source !== 'string') return refs
+  for (const m of source.matchAll(/process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
+    if (!m[1].startsWith('NEXT_PUBLIC_')) refs.add(m[1])
+  }
+  // 動的アクセスは名前が静的に分からない。**一律で危険とみなす。**
+  if (/process\.env\s*\[/.test(source)) refs.add('<動的アクセス>')
+  return refs
+}

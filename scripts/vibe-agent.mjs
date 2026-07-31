@@ -30,6 +30,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import {
+  isAddAllowed,
   isReadablePath,
   isSafeGlobPattern,
   isWritablePath,
@@ -42,6 +43,16 @@ const INSTRUCTION = process.env.VIBE_INSTRUCTION ?? ''
 if (!INSTRUCTION.trim()) {
   console.error('[vibe] VIBE_INSTRUCTION が空です。')
   process.exit(2)
+}
+
+/** リポジトリ相対パスが既に存在するか。 */
+async function exists(unix) {
+  try {
+    await fs.access(path.join(REPO, unix))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** リポジトリ内の相対パスへ正規化する。外へ出るものは null。 */
@@ -85,6 +96,7 @@ const q = query({
     '- 型チェックと単体テストが通る状態にしてください。通らないと push されません。',
     '- 色・余白・角丸・影を変えるときは lib/design-tokens.ts を編集してください',
     '  （tailwind.config.ts はそこから導出しているので、値を二重に持ちません）。',
+    '- app/ 配下に新しいファイルは作れません（新しい公開URLになるため）。既存ページの変更だけ可能です。',
     '- ファイルを探すときは Glob / Grep に必ず path を指定してください。',
     '  リポジトリルート（"." や "")は起点にできません。app / components / lib などを指定してください。',
     '',
@@ -132,6 +144,13 @@ const q = query({
         denied += 1
         return deny(
           `${unix} は変更できません。変更してよいのは ${WRITE_ALLOWED_DESCRIPTION} だけです。`,
+        )
+      }
+      // SEC-098: `app/` 配下の**新規**ファイルは新しい公開URLになる。既存の変更だけ許す。
+      if (!isAddAllowed(unix) && !(await exists(unix))) {
+        denied += 1
+        return deny(
+          `${unix} は新規に作成できません（app/ 配下に新しい経路を作れません）。既存ファイルの変更だけが可能です。`,
         )
       }
       touched.add(unix)

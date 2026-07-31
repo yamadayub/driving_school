@@ -23,9 +23,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { readFileSync } from 'node:fs'
 import {
+  isAddAllowed,
   isReadablePath,
   isSafeGlobPattern,
   isWritablePath,
+  secretEnvRefs,
 } from '../../scripts/vibe-policy.mjs'
 
 const REPO = resolve(__dirname, '../..')
@@ -114,99 +116,100 @@ describe('SEC-086 / 087: 読み取りは許可リストで決まる', () => {
   })
 })
 
-describe('SEC-084: 検査スクリプトが実際に違反を検出する', () => {
-  /** 使い捨ての git リポジトリを作り、base コミットを1つ置く。 */
-  function makeRepo(): { dir: string; base: string } {
-    const dir = mkdtempSync(join(tmpdir(), 'vibe-check-'))
-    const git = (...args: string[]) =>
-      execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
-    git('init', '-q', '-b', 'main')
-    git('config', 'user.email', 'test@example.invalid')
-    git('config', 'user.name', 'test')
-    mkdirSync(join(dir, 'components/ui'), { recursive: true })
-    writeFileSync(join(dir, 'components/ui/Button.tsx'), 'export const Button = () => null\n')
-    git('add', '-A')
-    git('commit', '-qm', 'base')
-    return { dir, base: git('rev-parse', 'HEAD').trim() }
-  }
+/** 使い捨ての git リポジトリを作り、base コミットを1つ置く。 */
+function makeRepo(): { dir: string; base: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'vibe-check-'))
+  const git = (...args: string[]) =>
+    execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' })
+  git('init', '-q', '-b', 'main')
+  git('config', 'user.email', 'test@example.invalid')
+  git('config', 'user.name', 'test')
+  mkdirSync(join(dir, 'components/ui'), { recursive: true })
+  writeFileSync(join(dir, 'components/ui/Button.tsx'), 'export const Button = () => null\n')
+  git('add', '-A')
+  git('commit', '-qm', 'base')
+  return { dir, base: git('rev-parse', 'HEAD').trim() }
+}
 
-  /**
-   * 検査スクリプトを起動し、終了コードを返す。
-   *
-   * ⚠️ スクリプトは**被験リポジトリの外**へ置く。中にコピーすると `git add -A` で
-   * `scripts/` 自身が新規ファイルとして差分に乗り、**テストが自分で違反を作ってしまう**
-   * （最初にそう書いて、正常系が落ちた）。`--cached` 比較の cwd は被験リポジトリのまま。
-   */
-  function runCheck(dir: string, base: string): { code: number; out: string } {
-    const bin = mkdtempSync(join(tmpdir(), 'vibe-bin-'))
-    try {
-      for (const name of ['check-protected-paths.mjs', 'vibe-policy.mjs']) {
-        writeFileSync(join(bin, name), readFileSync(join(REPO, 'scripts', name)))
-      }
-      execFileSync('git', ['add', '-A'], { cwd: dir, stdio: 'pipe' })
-      try {
-        const out = execFileSync('node', [join(bin, 'check-protected-paths.mjs'), base], {
-          cwd: dir,
-          encoding: 'utf8',
-          stdio: 'pipe',
-        })
-        return { code: 0, out }
-      } catch (error) {
-        const e = error as { status: number; stdout?: string; stderr?: string }
-        return { code: e.status, out: `${e.stdout ?? ''}${e.stderr ?? ''}` }
-      }
-    } finally {
-      rmSync(bin, { recursive: true, force: true })
+/**
+ * 検査スクリプトを起動し、終了コードを返す。
+ *
+ * ⚠️ スクリプトは**被験リポジトリの外**へ置く。中にコピーすると `git add -A` で
+ * `scripts/` 自身が新規ファイルとして差分に乗り、**テストが自分で違反を作ってしまう**
+ * （最初にそう書いて、正常系が落ちた）。`--cached` 比較の cwd は被験リポジトリのまま。
+ */
+function runCheck(dir: string, base: string): { code: number; out: string } {
+  const bin = mkdtempSync(join(tmpdir(), 'vibe-bin-'))
+  try {
+    for (const name of ['check-protected-paths.mjs', 'vibe-policy.mjs']) {
+      writeFileSync(join(bin, name), readFileSync(join(REPO, 'scripts', name)))
     }
+    execFileSync('git', ['add', '-A'], { cwd: dir, stdio: 'pipe' })
+    try {
+      const out = execFileSync('node', [join(bin, 'check-protected-paths.mjs'), base], {
+        cwd: dir,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      })
+      return { code: 0, out }
+    } catch (error) {
+      const e = error as { status: number; stdout?: string; stderr?: string }
+      return { code: e.status, out: `${e.stdout ?? ''}${e.stderr ?? ''}` }
+    }
+  } finally {
+    rmSync(bin, { recursive: true, force: true })
   }
+}
 
+  describe('SEC-084: 検査スクリプトが実際に違反を検出する', () => {
   it('許可された範囲だけの変更なら通る', () => {
-    const { dir, base } = makeRepo()
-    try {
-      writeFileSync(join(dir, 'components/ui/Button.tsx'), 'export const Button = () => <b />\n')
-      expect(runCheck(dir, base).code).toBe(0)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
+      const { dir, base } = makeRepo()
+      try {
+        writeFileSync(join(dir, 'components/ui/Button.tsx'), 'export const Button = () => <b />\n')
+        expect(runCheck(dir, base).code).toBe(0)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
 
-  it('⚠️ 既存の保護ファイルを書き換えたら止まる', () => {
-    const { dir, base } = makeRepo()
-    try {
-      writeFileSync(join(dir, 'components/ui/Button.tsx'), 'export const Button = () => <b />\n')
-      writeFileSync(join(dir, 'auth.ts'), 'export const bypass = true\n')
-      const result = runCheck(dir, base)
-      expect(result.code, `検査が通ってしまった:\n${result.out}`).toBe(1)
-      expect(result.out).toContain('auth.ts')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
+    it('⚠️ 既存の保護ファイルを書き換えたら止まる', () => {
+      const { dir, base } = makeRepo()
+      try {
+        writeFileSync(join(dir, 'components/ui/Button.tsx'), 'export const Button = () => <b />\n')
+        writeFileSync(join(dir, 'auth.ts'), 'export const bypass = true\n')
+        const result = runCheck(dir, base)
+        expect(result.code, `検査が通ってしまった:\n${result.out}`).toBe(1)
+        expect(result.out).toContain('auth.ts')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
 
-  it('⚠️ **新規ファイル**を置いても止まる（`--cached` を外すと見逃す形）', () => {
-    // 本命の攻撃形。未追跡ファイルは `git diff`（インデックスを介さない形）に現れない。
-    const { dir, base } = makeRepo()
-    try {
-      mkdirSync(join(dir, '.github/workflows'), { recursive: true })
-      mkdirSync(join(dir, 'tests'), { recursive: true })
-      writeFileSync(join(dir, '.github/workflows/steal.yml'), 'name: steal\n')
-      writeFileSync(join(dir, 'tests/loose.test.ts'), 'it("", () => {})\n')
-      const result = runCheck(dir, base)
-      expect(result.code, `新規ファイルを見逃した:\n${result.out}`).toBe(1)
-      expect(result.out).toContain('steal.yml')
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
+    it('⚠️ **新規ファイル**を置いても止まる（`--cached` を外すと見逃す形）', () => {
+      // 本命の攻撃形。未追跡ファイルは `git diff`（インデックスを介さない形）に現れない。
+      const { dir, base } = makeRepo()
+      try {
+        mkdirSync(join(dir, '.github/workflows'), { recursive: true })
+        mkdirSync(join(dir, 'tests'), { recursive: true })
+        writeFileSync(join(dir, '.github/workflows/steal.yml'), 'name: steal\n')
+        writeFileSync(join(dir, 'tests/loose.test.ts'), 'it("", () => {})\n')
+        const result = runCheck(dir, base)
+        expect(result.code, `新規ファイルを見逃した:\n${result.out}`).toBe(1)
+        expect(result.out).toContain('steal.yml')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
 
-  it('⚠️ 検査は `--cached` を使い、`..HEAD` を使わない（SEC-084 の再発防止）', () => {
-    // `..HEAD` はコミット間比較なので、未コミット状態では常に空＝常に通る。
-    const source = readFileSync(join(REPO, 'scripts/check-protected-paths.mjs'), 'utf8')
-    const diffCall = source.match(/execFileSync\('git', \[([^\]]+)\]/)
-    expect(diffCall, 'git diff の呼び出しが見つからない').not.toBeNull()
-    expect(diffCall![1]).toContain("'--cached'")
-    expect(diffCall![1]).not.toContain('..HEAD')
-  })
+    it('⚠️ 検査は `--cached` を使い、`..HEAD` を使わない（SEC-084 の再発防止）', () => {
+      // `..HEAD` はコミット間比較なので、未コミット状態では常に空＝常に通る。
+      const source = readFileSync(join(REPO, 'scripts/check-protected-paths.mjs'), 'utf8')
+      // 引数は複数行に折り返されうるので、呼び出し単位ではなく `git diff` の実引数だけを見る。
+      const diffArgs = source.slice(source.indexOf("['diff'"), source.indexOf('.split'))
+      expect(diffArgs, 'git diff の実引数が見つからない').not.toBe('')
+      expect(diffArgs).toContain("'--cached'")
+      expect(diffArgs, `git diff の実引数:\n${diffArgs}`).not.toContain('..HEAD')
+    })
 })
 
 describe('SEC-085: ゲートは push 資格情報を持たないジョブで走る', () => {
@@ -232,5 +235,107 @@ describe('SEC-085: ゲートは push 資格情報を持たないジョブで走�
     expect(writable[0]).not.toContain('pnpm test:unit')
     expect(writable[0]).not.toContain('pnpm install')
     expect(writable[0]).not.toContain('vibe-agent.mjs')
+  })
+})
+
+describe('SEC-098: app/ 配下に新しい経路を作らせない', () => {
+  it('app/ 配下は新規作成できない', () => {
+    // App Router では page.tsx を 1 枚置くだけで**新しい公開URL**が生まれる。
+    // それはサーバーコンポーネントとして本番で実行されるので、process.env を描画すれば
+    // 未認証の第三者が秘密を読める。再監査が実際に curl で AUTH_SECRET を取得して実証した。
+    expect(isAddAllowed('app/(public)/leak/page.tsx')).toBe(false)
+    expect(isAddAllowed('app/whatever.tsx')).toBe(false)
+  })
+
+  it('components/ 配下の新規作成は許す（経路は増えない）', () => {
+    expect(isAddAllowed('components/ui/NewThing.tsx')).toBe(true)
+  })
+
+  it('秘密の参照だけを拾い、NEXT_PUBLIC_ は拾わない', () => {
+    expect([...secretEnvRefs('process.env.AUTH_SECRET')]).toEqual(['AUTH_SECRET'])
+    expect([...secretEnvRefs('process.env.NEXT_PUBLIC_SITE_URL')]).toEqual([])
+    // 名前が静的に分からない形は一律で危険とみなす。
+    expect([...secretEnvRefs('process.env[key]')]).toEqual(['<動的アクセス>'])
+  })
+
+  it('⚠️ 許可された既存ファイルに秘密の参照を**足す**と止まる', () => {
+    const { dir, base } = makeRepo()
+    try {
+      writeFileSync(
+        join(dir, 'components/ui/Button.tsx'),
+        'export const Button = () => <b>{process.env.AUTH_SECRET}</b>\n',
+      )
+      const result = runCheck(dir, base)
+      expect(result.code, `秘密の持ち出しを見逃した:\n${result.out}`).toBe(1)
+      expect(result.out).toContain('AUTH_SECRET')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('既存の正当な参照は、そのままなら止めない', () => {
+    // app/(public)/apply/page.tsx は正当に FORM_SESSION_SECRET を使っている。
+    // 「増えた参照だけ」を違反とするので、無関係な変更で落ちてはいけない。
+    const { dir, base } = makeRepo()
+    try {
+      writeFileSync(
+        join(dir, 'components/ui/Legit.tsx'),
+        'export const A = () => <b>{process.env.FORM_SESSION_SECRET}</b>\n',
+      )
+      execFileSync('git', ['add', '-A'], { cwd: dir, stdio: 'pipe' })
+      execFileSync('git', ['commit', '-qm', 'legit'], { cwd: dir, stdio: 'pipe' })
+      const base2 = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim()
+      writeFileSync(
+        join(dir, 'components/ui/Legit.tsx'),
+        'export const A = () => <i>{process.env.FORM_SESSION_SECRET}</i>\n',
+      )
+      const result = runCheck(dir, base2)
+      expect(result.code, `既存の参照で誤検知した:\n${result.out}`).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('SEC-100: リネームで保護ファイルを消せない', () => {
+  it('⚠️ middleware.ts を components/ へリネームすると止まる', () => {
+    const { dir } = makeRepo()
+    try {
+      writeFileSync(join(dir, 'middleware.ts'), 'export const config = {}\n')
+      execFileSync('git', ['add', '-A'], { cwd: dir, stdio: 'pipe' })
+      execFileSync('git', ['commit', '-qm', 'add middleware'], { cwd: dir, stdio: 'pipe' })
+      const base2 = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim()
+
+      execFileSync('git', ['mv', 'middleware.ts', 'components/dead.tsx'], { cwd: dir, stdio: 'pipe' })
+      const result = runCheck(dir, base2)
+      // --no-renames が無いと `R100 middleware.ts -> components/dead.tsx` の 1 行になり、
+      // --name-only では宛先しか出ず「許可された components/ への変更」に見える。
+      expect(result.code, `リネームによる削除を見逃した:\n${result.out}`).toBe(1)
+      expect(result.out).toContain('middleware.ts')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('⚠️ 検査は --no-renames を使う（SEC-100 の再発防止）', () => {
+    const source = readFileSync(join(REPO, 'scripts/check-protected-paths.mjs'), 'utf8')
+    expect(source).toContain("'--no-renames'")
+    expect(source).toContain("'--name-status'")
+  })
+})
+
+describe('SEC-099: 検査は patch 適用前の判定モジュールで走る', () => {
+  const workflow = readFileSync(join(REPO, '.github/workflows/vibe.yml'), 'utf8')
+
+  it('作業ツリーの scripts/ から検査を起動しない', () => {
+    // patch が vibe-policy.mjs 自身を含んでいると、3つの検査がそろって
+    // 「許可されている」と答えてしまう。base から退避した実体を使うこと。
+    expect(workflow).not.toMatch(/node\s+scripts\/check-protected-paths\.mjs/)
+  })
+
+  it('base から退避した実体を使う', () => {
+    const invocations = workflow.match(/node \/tmp\/vibe-guard\/check-protected-paths\.mjs/g) ?? []
+    expect(invocations.length, '3ジョブすべてで退避側を使うこと').toBe(3)
+    expect(workflow).toContain('git show "${{ steps.base.outputs.sha }}:scripts/vibe-policy.mjs"')
   })
 })

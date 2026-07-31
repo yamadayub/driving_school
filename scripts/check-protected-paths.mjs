@@ -36,7 +36,12 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { isWritablePath, WRITE_ALLOWED_DESCRIPTION } from './vibe-policy.mjs'
+import {
+  isAddAllowed,
+  isWritablePath,
+  secretEnvRefs,
+  WRITE_ALLOWED_DESCRIPTION,
+} from './vibe-policy.mjs'
 
 const base = process.argv[2]
 if (!base) {
@@ -45,26 +50,82 @@ if (!base) {
   process.exit(2)
 }
 
-// ⚠️ `--cached` を外すと新規ファイルを見逃す。`..HEAD` にすると常に空になる（SEC-084）。
-const changed = execFileSync('git', ['diff', '--cached', '--name-only', base], { encoding: 'utf8' })
+/**
+ * ⚠️ 引数はどれも外せない。
+ *  - `--cached`      : 外すと新規ファイルを見逃す（未追跡は diff に出ない）
+ *  - `<base>` のみ   : `..HEAD` にすると常に空になる（SEC-084）
+ *  - `--no-renames`  : **外すと保護ファイルのリネームが宛先側しか出ない**（SEC-100）。
+ *                      `middleware.ts` → `components/dead.tsx` が `R100` 1 行になり、
+ *                      「許可された `components/` への変更」に見えて検査を通る。
+ *                      実測: 既定は `R100 middleware.ts components/dead.tsx`、
+ *                      `--no-renames` なら `A components/dead.tsx` + `D middleware.ts`。
+ */
+const entries = execFileSync(
+  'git',
+  ['diff', '--cached', '--name-status', '--no-renames', base],
+  { encoding: 'utf8' },
+)
   .split('\n')
   .map((line) => line.trim())
   .filter(Boolean)
+  .map((line) => {
+    const [status, ...rest] = line.split('\t')
+    return { status: status[0], file: rest.join('\t') }
+  })
 
-if (changed.length === 0) {
+if (entries.length === 0) {
   console.log('[protected] 変更がありません。')
   process.exit(0)
 }
 
-const violations = changed.filter((file) => !isWritablePath(file))
+/** インデックス上の内容。存在しなければ null。 */
+const staged = (file) => {
+  try {
+    return execFileSync('git', ['show', `:${file}`], { encoding: 'utf8' })
+  } catch {
+    return null
+  }
+}
+/** base 時点の内容。存在しなければ null（＝新規ファイル）。 */
+const original = (file) => {
+  try {
+    return execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
+  } catch {
+    return null
+  }
+}
 
-console.log(`[protected] 変更されたファイル ${changed.length} 件:`)
-for (const file of changed) console.log(`  ${violations.includes(file) ? '✗' : '✓'} ${file}`)
+const violations = []
+for (const { status, file } of entries) {
+  if (!isWritablePath(file)) {
+    violations.push({ file, why: '許可されていないパスです' })
+    continue
+  }
+  if (status === 'A' && !isAddAllowed(file)) {
+    // SEC-098: app/ 配下の新規ファイルは新しい公開URLになる。
+    violations.push({ file, why: 'app/ 配下に新しいファイルは作れません（既存の変更のみ可）' })
+    continue
+  }
+  if (status === 'D') continue
+
+  // SEC-098: **増えた**秘密参照だけを違反とする（既存の正当な参照は残す）。
+  const before = status === 'A' ? new Set() : secretEnvRefs(original(file) ?? '')
+  const added = [...secretEnvRefs(staged(file) ?? '')].filter((name) => !before.has(name))
+  if (added.length > 0) {
+    violations.push({ file, why: `秘密の参照が増えています: ${added.join(', ')}` })
+  }
+}
+
+console.log(`[protected] 変更されたファイル ${entries.length} 件:`)
+const bad = new Set(violations.map((v) => v.file))
+for (const { status, file } of entries) {
+  console.log(`  ${bad.has(file) ? '✗' : '✓'} ${status} ${file}`)
+}
 
 if (violations.length > 0) {
   console.error('')
-  console.error('[protected] 許可されていないパスが変更されました。push を中止します:')
-  for (const file of violations) console.error(`  - ${file}`)
+  console.error('[protected] 許可されていない変更です。push を中止します:')
+  for (const { file, why } of violations) console.error(`  - ${file} — ${why}`)
   console.error('')
   console.error(`変更してよいのは ${WRITE_ALLOWED_DESCRIPTION} だけです。`)
   console.error('認証・レート制限・テスト・ワークフロー自身などは、この仕組みの前提を支えます。')

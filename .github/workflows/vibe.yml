@@ -80,6 +80,17 @@ jobs:
         id: base
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: 検査モジュールを base から退避する
+        # ⚠️ **判定モジュールを作業ツリーから読んではいけない**（SEC-099）。
+        # 3回の検査は「前のジョブを信用しない」ために置いているが、いずれも
+        # `scripts/vibe-policy.mjs` を作業ツリーから読んでいた。patch がその判定モジュール
+        # 自身を含んでいれば、3つの検査はそろって「許可されている」と答える。
+        # base の内容をツリー外へ退避し、**常にそちらを実行する。**
+        run: |
+          mkdir -p /tmp/vibe-guard
+          git show "${{ steps.base.outputs.sha }}:scripts/check-protected-paths.mjs" > /tmp/vibe-guard/check-protected-paths.mjs
+          git show "${{ steps.base.outputs.sha }}:scripts/vibe-policy.mjs"           > /tmp/vibe-guard/vibe-policy.mjs
+
       - uses: pnpm/action-setup@v4
         # version は指定しない。package.json の `packageManager` が真実源であり、
         # 両方に書くと action が「複数指定」で落ちる。
@@ -106,7 +117,7 @@ jobs:
         # 新規ファイル（`scripts/` への追加など）を見逃す（SEC-084）。
         run: |
           git add -A
-          node scripts/check-protected-paths.mjs "${{ steps.base.outputs.sha }}"
+          node /tmp/vibe-guard/check-protected-paths.mjs "${{ steps.base.outputs.sha }}"
 
       - name: patch を作る
         id: patch
@@ -150,12 +161,23 @@ jobs:
           name: vibe-patch
           path: /tmp
 
+      - name: 検査モジュールを base から退避する
+        # ⚠️ **判定モジュールを作業ツリーから読んではいけない**（SEC-099）。
+        # 3回の検査は「前のジョブを信用しない」ために置いているが、いずれも
+        # `scripts/vibe-policy.mjs` を作業ツリーから読んでいた。patch がその判定モジュール
+        # 自身を含んでいれば、3つの検査はそろって「許可されている」と答える。
+        # base の内容をツリー外へ退避し、**常にそちらを実行する。**
+        run: |
+          mkdir -p /tmp/vibe-guard
+          git show "HEAD:scripts/check-protected-paths.mjs" > /tmp/vibe-guard/check-protected-paths.mjs
+          git show "HEAD:scripts/vibe-policy.mjs"           > /tmp/vibe-guard/vibe-policy.mjs
+
       - name: patch を当てて、もう一度検査する
         # ⚠️ **agent ジョブの検査を信用しない。** そのジョブではエージェントが動いていた。
         # ここは patch だけを受け取ったクリーンな木なので、判定を独立にやり直せる。
         run: |
           git apply --index --whitespace=nowarn /tmp/vibe.patch
-          node scripts/check-protected-paths.mjs HEAD
+          node /tmp/vibe-guard/check-protected-paths.mjs HEAD
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -218,10 +240,21 @@ jobs:
           name: vibe-patch
           path: /tmp
 
+      - name: 検査モジュールを base から退避する
+        # ⚠️ **判定モジュールを作業ツリーから読んではいけない**（SEC-099）。
+        # 3回の検査は「前のジョブを信用しない」ために置いているが、いずれも
+        # `scripts/vibe-policy.mjs` を作業ツリーから読んでいた。patch がその判定モジュール
+        # 自身を含んでいれば、3つの検査はそろって「許可されている」と答える。
+        # base の内容をツリー外へ退避し、**常にそちらを実行する。**
+        run: |
+          mkdir -p /tmp/vibe-guard
+          git show "HEAD:scripts/check-protected-paths.mjs" > /tmp/vibe-guard/check-protected-paths.mjs
+          git show "HEAD:scripts/vibe-policy.mjs"           > /tmp/vibe-guard/vibe-policy.mjs
+
       - name: patch を当てて、三度目の検査をする
         run: |
           git apply --index --whitespace=nowarn /tmp/vibe.patch
-          node scripts/check-protected-paths.mjs HEAD
+          node /tmp/vibe-guard/check-protected-paths.mjs HEAD
 
       - name: コミットして push
         env:
