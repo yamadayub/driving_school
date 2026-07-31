@@ -3,17 +3,40 @@ name: Vibe Coding
 # 管理画面からの指示でコードを変更し、ゲートを通ったときだけ push する。
 # push されると Vercel が自動デプロイし、公開サイトが更新される。
 #
-# ── 設計の要点 ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════
+# ⚠️ ジョブを3つに分けている理由（SEC-084 / SEC-085）— 変更する前に必ず読むこと
+# ══════════════════════════════════════════════════════════════════════════
+# 以前は 1 ジョブで「エージェント実行 → 検査 → ゲート → push」を順に行っていた。
+# 監査（docs/security-vibe-audit-2026-07-31.md）で **Critical 2 件**が確認された:
+#
+#  SEC-084: 検査が一度も発火しなかった。`git diff <base>..HEAD` は**コミット間**の比較だが、
+#           検査の時点で変更は未コミット（commit は最後）。つまり常に空だった。
+#  SEC-085: `pnpm test:unit` と `pnpm build` は**エージェントが書いたコードを実行する**。
+#           同じジョブの `.git/config` には checkout が置いた `contents: write` の
+#           資格情報があり、実行されたコードから読めた。公開リポジトリなので、
+#           それをソースに書けば第三者に永久公開されうる（SEC-086）。
+#           **「防御をゲート自身が無効化する」構造**（SEC-075 と同型）の再発だった。
+#
+# したがって:
+#
+#   agent   … エージェントを動かし、変更を **patch として持ち出す**だけ。
+#             `permissions: contents: read` / `persist-credentials: false`。
+#             **ゲートは動かさない**（この時点のワークスペースは汚染されている）。
+#   verify  … **クリーンな checkout** に patch を当ててゲートを回す。
+#             エージェントのコードが実行されるのはここだが、**資格情報が一切無い**。
+#   push    … **クリーンな checkout** に patch を当てて commit & push する。
+#             ここでは install も build もしない＝**エージェントのコードを一切実行しない。**
+#
+# 各ジョブが patch を当てた直後に検査をやり直す。**検査と push を、
+# 攻撃者コードが動いたのとは別のプロセス空間に置く**のが要点である。
+#
+# ── その他の設計の要点 ──────────────────────────────────────
 # 1. **ルールに従う側がルールを書き換えられない。**
-#    このファイルと scripts/ は保護パスに入っており、エージェントは変更できない。
+#    このファイルと scripts/ は許可リストの外なので、エージェントは変更できない。
 #    加えて、管理画面が使う PAT には `workflows: write` を与えていないので、
 #    GitHub 側でもワークフロー定義の変更を拒否する（二重）。
-#
-# 2. **push は最後。** 変更 → 保護パス検査 → type-check → unit → build を
-#    すべて通ってから初めて commit & push する。どこかで落ちれば公開サイトは変わらない。
-#
-# 3. **tests/ を保護している。** ここを許すと「ゲートを通す最も簡単な方法＝テストを弱める」
-#    になり、防御を測っているテストが書き換わってもゲートは緑になる。
+# 2. **変更可能な範囲は許可リストで決まる**（scripts/vibe-policy.mjs）。
+#    拒否リストは知っている危険しか止められない（SEC-087 / 088 / 089）。
 
 on:
   workflow_dispatch:
@@ -23,9 +46,9 @@ on:
         required: true
         type: string
 
-# `contents: write` のみ。`workflows: write` は与えない。
+# ⚠️ 既定は read。**書き込みを与えるのは push ジョブだけ**（下でジョブ単位に上書きする）。
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   # 同時に走らせない。並行実行すると push が競合し、後勝ちで変更が消える。
@@ -33,15 +56,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  vibe:
+  # ────────────────────────────────────────────────────────────────
+  # 1. エージェント: 変更を作り、patch として持ち出す。ゲートは回さない。
+  # ────────────────────────────────────────────────────────────────
+  agent:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
+      changed: ${{ steps.patch.outputs.changed }}
 
     steps:
       - uses: actions/checkout@v4
         with:
-          # 差分を取るため全履歴が必要
           fetch-depth: 0
+          # ⚠️ **資格情報を .git/config に残さない**（SEC-085 / SEC-086）。
+          # これが無いと、この後に動くエージェントとゲートから push トークンが読める。
+          persist-credentials: false
 
       - name: 比較元を記録
         id: base
@@ -59,7 +92,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Prisma Client を生成
-        # 型チェックに必要。DB へは接続しない。
+        # エージェントが型を確認できるようにする。DB へは接続しない。
         run: pnpm exec prisma generate
 
       - name: エージェントを実行
@@ -68,9 +101,69 @@ jobs:
           VIBE_INSTRUCTION: ${{ inputs.instruction }}
         run: node scripts/vibe-agent.mjs
 
-      - name: 保護パスが変更されていないか検査
-        # プロンプトでの指示は強制ではない。**結果を差分で確認する。**
-        run: node scripts/check-protected-paths.mjs ${{ steps.base.outputs.sha }}
+      - name: 許可された範囲の変更かを検査
+        # ⚠️ `git add -A` を**検査の前に**行う。インデックスと比較しないと
+        # 新規ファイル（`scripts/` への追加など）を見逃す（SEC-084）。
+        run: |
+          git add -A
+          node scripts/check-protected-paths.mjs "${{ steps.base.outputs.sha }}"
+
+      - name: patch を作る
+        id: patch
+        run: |
+          if git diff --cached --quiet "${{ steps.base.outputs.sha }}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "変更が発生しませんでした。"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --cached --binary "${{ steps.base.outputs.sha }}" > /tmp/vibe.patch
+          wc -c /tmp/vibe.patch
+
+      - uses: actions/upload-artifact@v4
+        if: steps.patch.outputs.changed == 'true'
+        with:
+          name: vibe-patch
+          path: /tmp/vibe.patch
+          retention-days: 1
+
+  # ────────────────────────────────────────────────────────────────
+  # 2. 検証: クリーンな木に patch を当ててゲートを回す。
+  #    **エージェントのコードが実行されるのはここだけ。資格情報は無い。**
+  # ────────────────────────────────────────────────────────────────
+  verify:
+    needs: agent
+    if: needs.agent.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.agent.outputs.base }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibe-patch
+          path: /tmp
+
+      - name: patch を当てて、もう一度検査する
+        # ⚠️ **agent ジョブの検査を信用しない。** そのジョブではエージェントが動いていた。
+        # ここは patch だけを受け取ったクリーンな木なので、判定を独立にやり直せる。
+        run: |
+          git apply --index --whitespace=nowarn /tmp/vibe.patch
+          node scripts/check-protected-paths.mjs HEAD
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prisma generate
 
       - name: 型チェック
         run: pnpm type-check
@@ -102,20 +195,44 @@ jobs:
           POSTGRES_URL_NON_POOLING: postgresql://ci:ci@example.invalid:5432/ci
         run: pnpm build
 
+  # ────────────────────────────────────────────────────────────────
+  # 3. push: patch を当てて commit & push するだけ。
+  #    **install も build もしない＝エージェントのコードを一切実行しない。**
+  # ────────────────────────────────────────────────────────────────
+  push:
+    needs: [agent, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.agent.outputs.base }}
+          # ここでも資格情報は残さない。push は下で明示的にトークンを渡す。
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vibe-patch
+          path: /tmp
+
+      - name: patch を当てて、三度目の検査をする
+        run: |
+          git apply --index --whitespace=nowarn /tmp/vibe.patch
+          node scripts/check-protected-paths.mjs HEAD
+
       - name: コミットして push
         env:
           INSTRUCTION: ${{ inputs.instruction }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "変更が発生しませんでした。push しません。"
-            exit 0
-          fi
           git config user.name  "Vibe Coding"
           git config user.email "noreply@users.noreply.github.com"
-          git add -A
           git commit -m "style: ${INSTRUCTION}
 
           管理画面の Vibe Coding から生成。
-          保護パス検査 / type-check / unit / build を通過。
+          許可パス検査 / type-check / unit / build を通過。
           実行ログ: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          git push origin HEAD:master
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:master

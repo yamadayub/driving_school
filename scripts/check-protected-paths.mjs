@@ -1,5 +1,5 @@
 /**
- * Vibe Coding が変更してはならないパスに差分が無いかを検査する。
+ * Vibe Coding の変更が**許可された範囲に収まっているか**を検査する。
  *
  * -----------------------------------------------------------------------------
  * なぜプロンプトではなく検査で守るのか
@@ -9,62 +9,44 @@
  * 指示であって強制ではない。指示が守られたかを**差分で確認**し、破られていたら push しない。
  *
  * -----------------------------------------------------------------------------
- * なぜ tests/ を保護するのか（最重要）
+ * ⚠️ この検査は一度、**構造的に一度も発火しなかった**（SEC-084）
  * -----------------------------------------------------------------------------
- * ワークフローは push の前に `type-check` / `unit` / `build` を通す。
- * **tests/ を変更可能にすると、ゲートを通す最も簡単な方法が「テストを弱めること」になる。**
- * 防御を測っているテストが書き換われば、ゲートは通るが防御は消える——
- * このプロジェクトが繰り返し警戒してきた「空振りするテスト」そのものが自動生成される。
+ * 以前は `git diff --name-only <base>..HEAD` を使っていた。これは**コミット間**の比較である。
+ * ところがワークフローがこれを呼ぶ時点で、エージェントの変更は**まだコミットされていない**
+ * （commit は最後の push ステップで行う）。つまり `HEAD === base` であり、**差分は常に空**。
+ * 「最後の砦」と書いた層が、最初から存在していなかった。
+ *
+ * いま使う `git diff --cached --name-only <base>` は**インデックス**と比較する。
+ * 呼ぶ側が先に `git add -A` すること。**`--cached` を外してはならない**理由:
+ *
+ *   | 方式                                   | 新規ファイルを検出できるか |
+ *   |----------------------------------------|--------------------------|
+ *   | `git diff --name-only <base>`（未ステージ） | **できない**（未追跡は diff に出ない） |
+ *   | `git add -A` → `git diff --cached ...`   | できる                    |
+ *
+ * **新規ファイルこそ本命の攻撃形**である（`scripts/` に新しいスクリプトを置く、
+ * `tests/` に緩いテストを足す、`app/api/**\/route.ts` を作る）。
+ * `tests/unit/vibe-policy.test.ts` がこの引数の形を固定している。
  *
  * -----------------------------------------------------------------------------
- * .github/ と scripts/ を保護する理由
+ * 許可リストで判定する（SEC-088 / SEC-089）
  * -----------------------------------------------------------------------------
- * ワークフロー定義とこの検査スクリプト自身。**ルールに従う側がルールを書き換えられないこと**が
- * この設計の土台である。GitHub 側でも PAT に `workflows: write` を与えないことで二重に塞ぐ。
+ * 判定は `scripts/vibe-policy.mjs` に一本化した。以前はこのファイルと `vibe-agent.mjs` が
+ * **同じリストを別々に持ち**、「同じ内容を保つこと」というコメントで整合を祈っていた（SEC-091）。
  */
 
 import { execFileSync } from 'node:child_process'
-
-/** 変更を禁止するパス。前方一致（ディレクトリ）または完全一致（ファイル）。 */
-const PROTECTED = [
-  // 認証・認可
-  'auth.ts',
-  'auth.config.ts',
-  'middleware.ts',
-  'app/api/admin/_guard.ts',
-  'app/admin/(app)/layout.tsx',
-  'lib/auth-guard.ts',
-  // 起動時検証と公開エンドポイントのラッパ
-  'lib/env.ts',
-  'lib/public-guard.ts',
-  'lib/http-guard.ts',
-  'lib/seed-guard.ts',
-  'lib/cron-auth.ts',
-  // レート制限の中核（P2.5〜P3-c1 で固めた部分）
-  'lib/form-session.ts',
-  'lib/form-session-issue.ts',
-  'lib/rate-limit.ts',
-  'lib/semaphore.ts',
-  'lib/runtime-stores.ts',
-  // データモデル
-  'prisma/',
-  // ルール自身
-  '.github/',
-  'scripts/',
-  // ゲートを弱める経路
-  'tests/',
-  // 依存関係（サプライチェーン）
-  'package.json',
-  'pnpm-lock.yaml',
-]
+import { isWritablePath, WRITE_ALLOWED_DESCRIPTION } from './vibe-policy.mjs'
 
 const base = process.argv[2]
 if (!base) {
   console.error('使い方: node scripts/check-protected-paths.mjs <比較元のコミット>')
+  console.error('※ 呼ぶ前に `git add -A` しておくこと（インデックスと比較する）。')
   process.exit(2)
 }
 
-const changed = execFileSync('git', ['diff', '--name-only', `${base}..HEAD`], { encoding: 'utf8' })
+// ⚠️ `--cached` を外すと新規ファイルを見逃す。`..HEAD` にすると常に空になる（SEC-084）。
+const changed = execFileSync('git', ['diff', '--cached', '--name-only', base], { encoding: 'utf8' })
   .split('\n')
   .map((line) => line.trim())
   .filter(Boolean)
@@ -74,21 +56,20 @@ if (changed.length === 0) {
   process.exit(0)
 }
 
-const violations = changed.filter((file) =>
-  PROTECTED.some((rule) => (rule.endsWith('/') ? file.startsWith(rule) : file === rule)),
-)
+const violations = changed.filter((file) => !isWritablePath(file))
 
 console.log(`[protected] 変更されたファイル ${changed.length} 件:`)
 for (const file of changed) console.log(`  ${violations.includes(file) ? '✗' : '✓'} ${file}`)
 
 if (violations.length > 0) {
   console.error('')
-  console.error('[protected] 保護されたパスが変更されました。push を中止します:')
+  console.error('[protected] 許可されていないパスが変更されました。push を中止します:')
   for (const file of violations) console.error(`  - ${file}`)
   console.error('')
-  console.error('これらは認証・レート制限・テスト・ワークフロー自身など、')
-  console.error('この仕組みの前提を支えるファイルです。変更が必要なら人間が直接行ってください。')
+  console.error(`変更してよいのは ${WRITE_ALLOWED_DESCRIPTION} だけです。`)
+  console.error('認証・レート制限・テスト・ワークフロー自身などは、この仕組みの前提を支えます。')
+  console.error('変更が必要なら人間が直接行ってください。')
   process.exit(1)
 }
 
-console.log('[protected] 保護パスへの変更はありません。')
+console.log('[protected] すべて許可された範囲内の変更です。')

@@ -29,6 +29,12 @@
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import {
+  isReadablePath,
+  isSafeGlobPattern,
+  isWritablePath,
+  WRITE_ALLOWED_DESCRIPTION,
+} from './vibe-policy.mjs'
 
 const REPO = process.cwd()
 const INSTRUCTION = process.env.VIBE_INSTRUCTION ?? ''
@@ -37,35 +43,6 @@ if (!INSTRUCTION.trim()) {
   console.error('[vibe] VIBE_INSTRUCTION が空です。')
   process.exit(2)
 }
-
-/** 変更を禁止するパス。`scripts/check-protected-paths.mjs` と**同じ内容を保つこと**。 */
-const PROTECTED = [
-  'auth.ts',
-  'auth.config.ts',
-  'middleware.ts',
-  'app/api/admin/_guard.ts',
-  'app/admin/(app)/layout.tsx',
-  'lib/auth-guard.ts',
-  'lib/env.ts',
-  'lib/public-guard.ts',
-  'lib/http-guard.ts',
-  'lib/seed-guard.ts',
-  'lib/cron-auth.ts',
-  'lib/form-session.ts',
-  'lib/form-session-issue.ts',
-  'lib/rate-limit.ts',
-  'lib/semaphore.ts',
-  'lib/runtime-stores.ts',
-  'prisma/',
-  '.github/',
-  'scripts/',
-  'tests/',
-  'package.json',
-  'pnpm-lock.yaml',
-]
-
-/** 読み取りを禁止するパス（秘密の持ち出し防止）。 */
-const READ_DENIED = [/^\.env/, /^\.git\//, /^node_modules\//, /\.pem$/, /\.key$/]
 
 /** リポジトリ内の相対パスへ正規化する。外へ出るものは null。 */
 async function resolveInRepo(rawPath) {
@@ -89,10 +66,6 @@ async function resolveInRepo(rawPath) {
   return rel.split(path.sep).join('/')
 }
 
-function isProtected(unix) {
-  return PROTECTED.some((rule) => (rule.endsWith('/') ? unix.startsWith(rule) : unix === rule))
-}
-
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep'])
 
@@ -106,12 +79,14 @@ const q = query({
     `指示: ${INSTRUCTION}`,
     '',
     '守ること:',
-    '- 認証・レート制限・スキーマ・テスト・ワークフローには触れないでください。',
-    '  これらは書き込みが拒否され、仮に変更されても push 前の検査で中止されます。',
+    `- 変更してよいのは ${WRITE_ALLOWED_DESCRIPTION} だけです。それ以外は書き込みが拒否され、`,
+    '  仮に変更されても push 前の検査で中止されます。',
     '- data-testid 属性とフォームのラベル文言は変更しないでください（E2E が参照しています）。',
     '- 型チェックと単体テストが通る状態にしてください。通らないと push されません。',
-    '- テストを弱めて通すことは禁止です（tests/ は変更できません）。',
+    '- 色・余白・角丸・影を変えるときは lib/design-tokens.ts を編集してください',
+    '  （tailwind.config.ts はそこから導出しているので、値を二重に持ちません）。',
     '- ファイルを探すときは Glob / Grep に必ず path を指定してください。',
+    '  リポジトリルート（"." や "")は起点にできません。app / components / lib などを指定してください。',
     '',
     '変更が完了したら、何をどう変えたかを簡潔に説明してください。',
   ].join('\n'),
@@ -130,10 +105,15 @@ const q = query({
           denied += 1
           return deny('パスを指定してください（検査できない読み取りは許可しません）。')
         }
-        const unix = await resolveInRepo(target)
-        if (unix === null || READ_DENIED.some((re) => re.test(unix))) {
+        // ⚠️ **`glob` も検査する。** 起点だけ縛ってもパターン側で抜けられては意味がない（SEC-087）。
+        if (!isSafeGlobPattern(input?.glob) || !isSafeGlobPattern(input?.pattern)) {
           denied += 1
-          return deny('このパスは読み取れません。')
+          return deny('このパターンは使用できません。')
+        }
+        const unix = await resolveInRepo(target)
+        if (unix === null || !isReadablePath(unix)) {
+          denied += 1
+          return deny('このパスは読み取れません（リポジトリルート起点の探索も含みます）。')
         }
         return allow
       }
@@ -148,10 +128,10 @@ const q = query({
         denied += 1
         return deny('リポジトリ外は変更できません。')
       }
-      if (isProtected(unix)) {
+      if (!isWritablePath(unix)) {
         denied += 1
         return deny(
-          `${unix} は保護されています（認証・レート制限・テスト・ワークフローなど）。変更が必要なら人間が直接行います。`,
+          `${unix} は変更できません。変更してよいのは ${WRITE_ALLOWED_DESCRIPTION} だけです。`,
         )
       }
       touched.add(unix)
