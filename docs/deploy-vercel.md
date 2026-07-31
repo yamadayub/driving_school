@@ -53,7 +53,17 @@ vercel login
 「成功したことにしない」**——バイトが 1 つも格納されていないのに「添付しました」と表示すると、
 送信時の実体検証（`head()` が null）で必ず落ちるためである。**無言のデータ欠損は起きない。**
 
-### ⚠️ ただし、トークンを入れてもアップロードは有効にならない
+### F-009（免許証写真アップロード）は**デモの範囲外**（2026-07-31 決定）
+
+利用者の判断により、本デモでは免許証写真のアップロードを提供しない。したがって
+**Blob ストアは接続していない**（`BLOB_READ_WRITE_TOKEN` は未設定）。UI は上記のとおり
+「この環境では写真のアップロードをご利用いただけません。」と明示するので、
+**利用者が気づかないまま失敗する経路にはならない。**
+
+ストア `driving-school-uploads`（`store_CO9vzkeFSVrNm8me` / チーム `style-elements`）は
+空のまま残してある。提供する判断に変わったら、下記の未実装分と併せて着手すること。
+
+### ⚠️ 提供する場合、トークンを入れるだけでは動かない
 
 `createBlobStorageAdapter().createSignedUpload()`（`lib/storage.ts:247-252`）が返す `uploadUrl` は
 `blob:<objectKey>` という**プレースホルダで、実在する PUT 先ではない**。上記の `http(s)://` 判定に
@@ -64,8 +74,8 @@ Vercel Blob へ実際にバイトを置くには、`@vercel/blob/client` の `up
 `lib/storage.ts:225-231` の「実 Blob に対する実測は未実施」はこの意味であり、
 **トークンを設定するだけでは F-009 は動かない。**
 
-Blob ストア `driving-school-uploads`（`store_CO9vzkeFSVrNm8me` / チーム `style-elements`）は
-作成・接続済みで、`BLOB_READ_WRITE_TOKEN` は注入されている。残っているのは上記の実装である。
+さらに、作成した Blob ストアは `access: "public"` である。public ストアは **URL を知っていれば
+誰でも取得できる**。免許証画像の保存先として採用する前に、private の可否を確認すること。
 
 CLI の `vercel blob store add` はストアを作れるが、**プロジェクトへの接続手順が対話式**で、
 トークンも CLI からは取得できない。ダッシュボード（`https://vercel.com/style-elements/~/stores`）
