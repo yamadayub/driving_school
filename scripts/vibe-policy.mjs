@@ -128,3 +128,55 @@ export function secretEnvRefs(source) {
   if (/process\.env\s*\[/.test(source)) refs.add('<動的アクセス>')
   return refs
 }
+
+/**
+ * 「秘密に到達しうる書き方」の出現回数を数える（SEC-105）。
+ *
+ * `secretEnvRefs` は `process.env.X` という**特定の書き方**しか見ておらず、
+ * 3回目の監査で 6 通り以上の迂回が示された。決定的だったのは
+ * **`getServerEnv()` を呼ぶだけの部品を `components/` に新規作成し、既存ページから
+ * 差し込む**形——`process.env` の文字列がどこにも現れない。
+ *
+ * そこで名前の列挙ではなく、**名前空間そのもの**を数える。
+ * 見た目を変えるコードに `process` も `getServerEnv` も要らない。
+ *
+ * ⚠️ **これは主防御ではない。** 拒否リストである以上、書き方の網羅はできない。
+ * 主防御は `verify` ジョブでの**実測**（起動して公開ルートの応答に秘密が出ないか）である。
+ * ここは「明らかな形を早期に、分かりやすいメッセージで止める」ための層。
+ */
+const SECRET_REACHING = [
+  'process',
+  'getServerEnv',
+  '@/lib/env',
+  'import.meta',
+  'globalThis',
+  'require(',
+  'eval(',
+  'Function(',
+]
+
+export function secretReachingTokens(source) {
+  const counts = new Map()
+  if (typeof source !== 'string') return counts
+  for (const token of SECRET_REACHING) {
+    let n = 0
+    let i = source.indexOf(token)
+    while (i !== -1) {
+      n += 1
+      i = source.indexOf(token, i + token.length)
+    }
+    if (n > 0) counts.set(token, n)
+  }
+  return counts
+}
+
+/** before から増えたトークンだけを返す（既存の正当な利用は落とさない）。 */
+export function addedSecretReaching(before, after) {
+  const b = secretReachingTokens(before)
+  const a = secretReachingTokens(after)
+  const added = []
+  for (const [token, count] of a) {
+    if (count > (b.get(token) ?? 0)) added.push(token)
+  }
+  return added
+}

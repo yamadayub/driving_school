@@ -150,6 +150,45 @@ jobs:
     permissions:
       contents: read
 
+    # ⚠️ **以下はすべて CI 専用のダミー値であり、本番の値ではない。**
+    # `next build` / `next start` は NODE_ENV=production で走るため `lib/env.ts` の本番検証
+    #（KV / Turnstile / 秘密鍵の存在と長さ、鍵の用途分離）が発火する。
+    # 秘密漏えい検査（check-secret-leak.mjs）は**この値が応答に出ないこと**を見るので、
+    # 十分に長く、他と紛れない文字列にしてある。
+    env:
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      AUTH_SECRET: vibe-ci-dummy-auth-secret-0123456789abcdef
+      FORM_SESSION_SECRET: vibe-ci-dummy-form-session-secret-fedcba9876543210
+      CRON_SECRET: vibe-ci-dummy-cron-secret-aaaabbbbccccdddd
+      TURNSTILE_SECRET: vibe-ci-dummy-turnstile-secret-eeeeffff00001111
+      # `https://` の偽ホストは `isKvConfigured()` に「到達可能な KV」と誤認され、
+      # 実 DNS 参照を招く（ci.yml で実際に踏んだ）。`memory://` で明示的に無効化する。
+      KV_REST_API_URL: memory://local-dev-only
+      KV_REST_API_TOKEN: vibe-ci-dummy-kv-token-2222333344445555
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/driving_school?schema=public
+      POSTGRES_PRISMA_URL: postgresql://postgres:postgres@localhost:5432/driving_school?schema=public
+      POSTGRES_URL_NON_POOLING: postgresql://postgres:postgres@localhost:5432/driving_school?schema=public
+      ADMIN_EMAIL: admin@iwataki-driving-school.demo
+      ADMIN_NAME: デモ管理者
+      ADMIN_PASSWORD: vibe-ci-dummy-admin-password-6666777788889999
+
+    # 秘密漏えい検査はアプリを**実際に起動して**応答を見るので DB が要る。
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: driving_school
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -163,14 +202,12 @@ jobs:
 
       - name: 検査モジュールを base から退避する
         # ⚠️ **判定モジュールを作業ツリーから読んではいけない**（SEC-099）。
-        # 3回の検査は「前のジョブを信用しない」ために置いているが、いずれも
-        # `scripts/vibe-policy.mjs` を作業ツリーから読んでいた。patch がその判定モジュール
-        # 自身を含んでいれば、3つの検査はそろって「許可されている」と答える。
-        # base の内容をツリー外へ退避し、**常にそちらを実行する。**
+        # patch が判定モジュール自身を含んでいれば、検査はそろって「許可されている」と答える。
         run: |
           mkdir -p /tmp/vibe-guard
           git show "HEAD:scripts/check-protected-paths.mjs" > /tmp/vibe-guard/check-protected-paths.mjs
           git show "HEAD:scripts/vibe-policy.mjs"           > /tmp/vibe-guard/vibe-policy.mjs
+          git show "HEAD:scripts/check-secret-leak.mjs"     > /tmp/vibe-guard/check-secret-leak.mjs
 
       - name: patch を当てて、もう一度検査する
         # ⚠️ **agent ジョブの検査を信用しない。** そのジョブではエージェントが動いていた。
@@ -195,27 +232,32 @@ jobs:
 
       - name: ビルド
         # ローカルと同じく DB 非依存（vercel-build ではなく build を使う）。
-        #
-        # ⚠️ **以下はビルドを通すためだけのダミー値であり、本番の値ではない。**
-        # `next build` は NODE_ENV=production で走るため `lib/env.ts` の本番検証
-        #（KV / Turnstile / 秘密鍵の存在と長さ、鍵の用途分離）が発火する。
-        # CI には .env が無いのでここで与える。**外部へ接続しない**——このステップが
-        # 見ているのは「本番構成で型とビルドが通るか」だけである。
-        # 本物の値は Vercel 側にあり、実際のデプロイはそちらで行われる。
-        env:
-          NEXT_PUBLIC_SITE_URL: https://example.invalid
-          AUTH_SECRET: ci-dummy-auth-secret-not-a-real-key-000001
-          FORM_SESSION_SECRET: ci-dummy-form-session-secret-not-real-000002
-          CRON_SECRET: ci-dummy-cron-secret-not-a-real-key-000003
-          # `https://` の偽ホストは `isKvConfigured()` に「到達可能な KV」と誤認され、
-          # 実 DNS 参照を招く（ci.yml で実際に踏んだ）。`memory://` で明示的に無効化する。
-          KV_REST_API_URL: memory://local-dev-only
-          KV_REST_API_TOKEN: ci-dummy-kv-token
-          TURNSTILE_SECRET: ci-dummy-turnstile-secret
-          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-dummy-turnstile-site-key
-          POSTGRES_PRISMA_URL: postgresql://ci:ci@example.invalid:5432/ci?pgbouncer=true
-          POSTGRES_URL_NON_POOLING: postgresql://ci:ci@example.invalid:5432/ci
         run: pnpm build
+
+      - name: マイグレーションと seed
+        run: |
+          pnpm exec prisma migrate deploy
+          pnpm db:seed
+
+      - name: 公開ページの応答に秘密が出ていないか**実測する**
+        # ══════════════════════════════════════════════════════════════════
+        # ⚠️ これが SEC-098 の**主防御**である。外さないこと。
+        # ══════════════════════════════════════════════════════════════════
+        # 静的な秘密検査（check-protected-paths.mjs）は「書き方」を探す拒否リストで、
+        # 監査は 6 通り以上の迂回を示した。決定的だったのは `getServerEnv()` を呼ぶ部品を
+        # components/ に新規作成し、既存ページから差し込む形——`process.env` の文字列が
+        # どこにも現れず、許可パス検査・型・単体・ビルドの**4つすべてが緑のまま**通り、
+        # 未認証の GET が AUTH_SECRET を返した。
+        #
+        # **書き方ではなく結果を見れば、迂回形を列挙する必要がない。**
+        run: |
+          pnpm start &
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:3000/; then break; fi
+            if [ "$i" -eq 60 ]; then echo "サーバーが起動しませんでした"; exit 1; fi
+            sleep 2
+          done
+          node /tmp/vibe-guard/check-secret-leak.mjs http://localhost:3000
 
   # ────────────────────────────────────────────────────────────────
   # 3. push: patch を当てて commit & push するだけ。

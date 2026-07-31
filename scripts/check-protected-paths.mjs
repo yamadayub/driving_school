@@ -37,11 +37,15 @@
 
 import { execFileSync } from 'node:child_process'
 import {
+  addedSecretReaching,
   isAddAllowed,
   isWritablePath,
   secretEnvRefs,
   WRITE_ALLOWED_DESCRIPTION,
 } from './vibe-policy.mjs'
+
+/** 64 MiB。既定の 1MB では大きなファイルで読み取りが失敗し、以前は素通りしていた（SEC-106）。 */
+const MAX_BUFFER = 64 * 1024 * 1024
 
 const base = process.argv[2]
 if (!base) {
@@ -62,38 +66,33 @@ if (!base) {
  */
 const entries = execFileSync(
   'git',
-  ['diff', '--cached', '--name-status', '--no-renames', base],
-  { encoding: 'utf8' },
+  ['diff', '--cached', '--name-status', '--no-renames', '-z', base],
+  { encoding: 'utf8', maxBuffer: MAX_BUFFER },
 )
-  .split('\n')
-  .map((line) => line.trim())
-  .filter(Boolean)
-  .map((line) => {
-    const [status, ...rest] = line.split('\t')
-    return { status: status[0], file: rest.join('\t') }
-  })
+  // ⚠️ `-z` を使う（SEC-107）。既定の出力は非ASCII名を `"components/\346\227\245..."` と
+  // クォートするので、そのまま判定に回すと**正当な日本語ファイル名が常に違反になる**。
+  // `-z` なら NUL 区切りで生のパスが出る。形式は `status\0path\0` の繰り返し。
+  .split('\0')
+  .filter((token) => token.length > 0)
+  .reduce((acc, token, index, all) => {
+    if (index % 2 === 0) acc.push({ status: token[0], file: all[index + 1] ?? '' })
+    return acc
+  }, [])
 
 if (entries.length === 0) {
   console.log('[protected] 変更がありません。')
   process.exit(0)
 }
 
-/** インデックス上の内容。存在しなければ null。 */
-const staged = (file) => {
-  try {
-    return execFileSync('git', ['show', `:${file}`], { encoding: 'utf8' })
-  } catch {
-    return null
-  }
-}
-/** base 時点の内容。存在しなければ null（＝新規ファイル）。 */
-const original = (file) => {
-  try {
-    return execFileSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' })
-  } catch {
-    return null
-  }
-}
+/**
+ * git の内容を読む。**読めなかったら例外を投げる**（SEC-106）。
+ *
+ * 以前は `catch { return null }` で握りつぶしており、1MB を超えるファイルで
+ * `maxBuffer` 超過が起きると**秘密検査を素通り**した（fail-open）。
+ * 検査できないことは「安全」ではない。
+ */
+const show = (rev) =>
+  execFileSync('git', ['show', rev], { encoding: 'utf8', maxBuffer: MAX_BUFFER })
 
 const violations = []
 for (const { status, file } of entries) {
@@ -108,11 +107,24 @@ for (const { status, file } of entries) {
   }
   if (status === 'D') continue
 
-  // SEC-098: **増えた**秘密参照だけを違反とする（既存の正当な参照は残す）。
-  const before = status === 'A' ? new Set() : secretEnvRefs(original(file) ?? '')
-  const added = [...secretEnvRefs(staged(file) ?? '')].filter((name) => !before.has(name))
-  if (added.length > 0) {
-    violations.push({ file, why: `秘密の参照が増えています: ${added.join(', ')}` })
+  // SEC-098 / SEC-105: **増えた**分だけを違反とする（既存の正当な利用は落とさない）。
+  // ⚠️ ここは主防御ではない。主防御は verify ジョブの実測（scripts/check-secret-leak.mjs）。
+  let before = ''
+  let after = ''
+  try {
+    after = show(`:${file}`)
+    if (status !== 'A') before = show(`${base}:${file}`)
+  } catch (error) {
+    violations.push({ file, why: `内容を検査できませんでした: ${(error && error.message) || error}` })
+    continue
+  }
+  const addedEnv = [...secretEnvRefs(after)].filter((name) => !secretEnvRefs(before).has(name))
+  const addedReach = addedSecretReaching(before, after)
+  if (addedEnv.length > 0 || addedReach.length > 0) {
+    violations.push({
+      file,
+      why: `秘密に到達しうる記述が増えています: ${[...addedEnv, ...addedReach].join(', ')}`,
+    })
   }
 }
 
