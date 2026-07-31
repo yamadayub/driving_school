@@ -1,6 +1,7 @@
 'use client'
 
 import { FormField } from '@/components/ui/FormField'
+import { ImeInput } from '@/components/ui/ImeInput'
 import { PreferenceCommonFields } from '@/components/apply/steps/PreferenceCommonFields'
 import type { ApplicationType, Values } from '@/components/apply/form-model'
 
@@ -26,21 +27,21 @@ export function StepPersonal({
         {type === 'INQUIRY' ? 'お客様情報・ご相談内容' : 'お客様情報をご入力ください'}
       </h2>
       <FormField id="name" label="氏名" required>
-        <input
+        <ImeInput
           id="name"
           name="name"
           autoComplete="name"
-          value={values.name as string}
-          onChange={(event) => setValue('name', event.target.value)}
+          value={(values.name as string) ?? ''}
+          onValueChange={(next) => setValue('name', next)}
           className="w-full rounded border border-border p-2"
         />
       </FormField>
       <FormField id="nameKana" label="氏名カナ" required help="全角カタカナでご入力ください">
-        <input
+        <ImeInput
           id="nameKana"
           name="nameKana"
-          value={values.nameKana as string}
-          onChange={(event) => setValue('nameKana', event.target.value)}
+          value={(values.nameKana as string) ?? ''}
+          onValueChange={(next) => setValue('nameKana', next)}
           className="w-full rounded border border-border p-2"
         />
       </FormField>
@@ -106,12 +107,12 @@ export function StepPersonal({
             />
           </FormField>
           <FormField id="address" label="住所" required>
-            <input
+            <ImeInput
               id="address"
               name="address"
               autoComplete="street-address"
               value={(values.address as string) ?? ''}
-              onChange={(event) => setValue('address', event.target.value || null)}
+              onValueChange={(next) => setValue('address', next || null)}
               className="w-full rounded border border-border p-2"
             />
           </FormField>

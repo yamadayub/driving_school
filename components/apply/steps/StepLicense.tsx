@@ -2,6 +2,7 @@
 
 import { CheckboxGroup } from '@/components/ui/CheckboxGroup'
 import { FormField } from '@/components/ui/FormField'
+import { ImeTextArea } from '@/components/ui/ImeInput'
 import { ImportantNoticeBlock } from '@/components/ui/ImportantNoticeBlock'
 import { RadioCardGroup } from '@/components/ui/RadioCardGroup'
 import { LICENSE_OPTIONS, YES_NO_OPTIONS, type Values } from '@/components/apply/form-model'
@@ -47,12 +48,12 @@ export function StepLicense({
         </p>
         {values.licenseRevoked === true && (
           <FormField id="licenseRevokedNote" label="取消歴の補足">
-            <textarea
+            <ImeTextArea
               id="licenseRevokedNote"
               name="licenseRevokedNote"
               rows={3}
               value={(values.licenseRevokedNote as string) ?? ''}
-              onChange={(event) => setValue('licenseRevokedNote', event.target.value || null)}
+              onValueChange={(next) => setValue('licenseRevokedNote', next || null)}
               className="w-full rounded border border-border p-2"
             />
           </FormField>

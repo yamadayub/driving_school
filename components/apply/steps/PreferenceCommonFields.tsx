@@ -2,6 +2,7 @@
 
 import { CheckboxGroup } from '@/components/ui/CheckboxGroup'
 import { FormField } from '@/components/ui/FormField'
+import { ImeTextArea } from '@/components/ui/ImeInput'
 import { RadioCardGroup } from '@/components/ui/RadioCardGroup'
 import { FIRST_TIME_OPTIONS, REFERRAL_OPTIONS, type Values } from '@/components/apply/form-model'
 
@@ -39,12 +40,12 @@ export function PreferenceCommonFields({
         onToggle={(option) => toggleInList('referralSources', option)}
       />
       <FormField id="message" label="ご質問・ご要望">
-        <textarea
+        <ImeTextArea
           id="message"
           name="message"
           rows={4}
           value={message}
-          onChange={(event) => setValue('message', event.target.value)}
+          onValueChange={(next) => setValue('message', next)}
           className="w-full rounded border border-border p-2"
         />
         <p className="mt-1 text-right text-caption text-text-secondary">
