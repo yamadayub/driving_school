@@ -5,11 +5,13 @@ import { usePathname } from 'next/navigation'
 
 /**
  * 管理画面サイドバー（admin-layout.md）。ダークな引き締まった帯（公開 Footer と同一トーン）。
- * お知らせ管理のみ有効。料金・コース/FAQ/受信管理は F-015〜017 未実装のため「準備中」（クリック不可）。
+ * お知らせ管理と Vibe Coding（サイトの見た目を変更）が有効。
+ * 料金・コース/FAQ/受信管理は F-015〜017 未実装のため「準備中」（クリック不可）。
  */
 const NAV = [
   { href: '/admin', label: 'ダッシュボード', exact: true },
   { href: '/admin/news', label: 'お知らせ', exact: false },
+  { href: '/admin/vibe', label: 'サイトの見た目を変更', exact: false },
 ] as const
 
 const DISABLED = ['料金・コース', 'FAQ', '受信管理'] as const
