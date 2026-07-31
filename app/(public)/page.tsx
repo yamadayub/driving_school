@@ -75,10 +75,15 @@ export default async function HomePage() {
           スクリム。**装飾ではなく可読性のために必要。** この写真は空が明るく、
           白文字をそのまま乗せるとコントラストが確保できない。
           ブランド色を重ねることで、写真を敷いても配色の印象を保つ。
+
+          **横方向のグラデーションにしている。** 見出しと CTA は左寄せなので、
+          左を濃く（文字の可読性）・右を薄く（写真を見せる）する。
+          上下方向で一律に濃くすると、可読性は satisfied でも写真がほぼ見えなくなる
+          ——初版がそれで、実画面で確認して気づいた。濃度は実際の描画で詰めた値。
         */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 -z-10 bg-gradient-to-b from-primary-800/90 to-primary-700/75"
+          className="absolute inset-0 -z-10 bg-gradient-to-r from-primary-800/90 via-primary-800/60 to-primary-700/30"
         />
         <div className="relative mx-auto max-w-container">
           <p className="text-label">通学も合宿も、あなたのペースで</p>
