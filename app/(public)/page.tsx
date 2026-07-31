@@ -76,14 +76,20 @@ export default async function HomePage() {
           白文字をそのまま乗せるとコントラストが確保できない。
           ブランド色を重ねることで、写真を敷いても配色の印象を保つ。
 
-          **横方向のグラデーションにしている。** 見出しと CTA は左寄せなので、
-          左を濃く（文字の可読性）・右を薄く（写真を見せる）する。
-          上下方向で一律に濃くすると、可読性は satisfied でも写真がほぼ見えなくなる
-          ——初版がそれで、実画面で確認して気づいた。濃度は実際の描画で詰めた値。
+          **方向を md で切り替えている。**
+          - md 以上: 見出しと CTA が左寄せで右半分が空くので、横方向。
+            左を濃く（文字の可読性）・右を薄く（写真を見せる）。
+          - md 未満: 見出しが全幅に回り込み、右端が薄い側に乗って読めなくなるため、
+            横方向は使えない。上下方向で全体をやや濃くする。
+
+          上下方向で一律に濃くしすぎると、可読性は満たしても写真がほぼ見えなくなる
+          ——初版（/90→/75）がそれ。濃度はいずれも実機幅の描画で詰めた値。
+          ⚠️ 変更するときは**実際に描画して確かめること。** 未使用の Tailwind クラスは
+          生成されないので、DevTools でクラス名を差し替えても評価にならない。
         */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 -z-10 bg-gradient-to-r from-primary-800/90 via-primary-800/60 to-primary-700/30"
+          className="absolute inset-0 -z-10 bg-gradient-to-b from-primary-800/80 to-primary-700/60 md:bg-gradient-to-r md:from-primary-800/90 md:via-primary-800/60 md:to-primary-700/30"
         />
         <div className="relative mx-auto max-w-container">
           <p className="text-label">通学も合宿も、あなたのペースで</p>
