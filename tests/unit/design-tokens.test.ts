@@ -14,7 +14,7 @@ import {
 // バッジ役割ごとの色相・形状分離（REV-008）が壊れていないことをスモークで担保する。
 describe('design tokens', () => {
   it('primary/accent のブランドカラーが DESIGN §2 と一致する', () => {
-    expect(colors.primary[700]).toBe('#1D4ED8')
+    expect(colors.primary[700]).toBe('#BE123C')
     expect(colors.accent[700]).toBe('#C2410C')
     expect(colors.line.base).toBe('#06C755')
   })

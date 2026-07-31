@@ -5,7 +5,7 @@
  */
 
 export const colors = {
-  primary: { 50: '#EFF6FF', 500: '#3B82F6', 700: '#1D4ED8', 800: '#1E40AF' },
+  primary: { 50: '#FFF1F2', 500: '#F43F5E', 700: '#BE123C', 800: '#9F1239' },
   accent: { 50: '#FFF7ED', 500: '#F97316', 700: '#C2410C', 800: '#9A3412' },
   line: { base: '#06C755', dark: '#05A648' },
   semantic: {
