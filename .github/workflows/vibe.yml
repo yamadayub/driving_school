@@ -92,7 +92,9 @@ jobs:
           AUTH_SECRET: ci-dummy-auth-secret-not-a-real-key-000001
           FORM_SESSION_SECRET: ci-dummy-form-session-secret-not-real-000002
           CRON_SECRET: ci-dummy-cron-secret-not-a-real-key-000003
-          KV_REST_API_URL: https://example.invalid
+          # `https://` の偽ホストは `isKvConfigured()` に「到達可能な KV」と誤認され、
+          # 実 DNS 参照を招く（ci.yml で実際に踏んだ）。`memory://` で明示的に無効化する。
+          KV_REST_API_URL: memory://local-dev-only
           KV_REST_API_TOKEN: ci-dummy-kv-token
           TURNSTILE_SECRET: ci-dummy-turnstile-secret
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ci-dummy-turnstile-site-key

@@ -29,7 +29,11 @@ env:
   #    （ビルドはページを評価するので `auth.ts` の `getServerEnv()` が走る / RV-P2R-005）。
   #    実 KV へは接続しない。**`FORM_SESSION_SECRET` は `AUTH_SECRET` と別の値**にすること
   #    （同一値は `lib/env.ts` が鍵の用途分離違反として拒否する）。
-  KV_REST_API_URL: https://ci-dummy-kv.upstash.io
+  # ⚠️ **`https://` の偽ホストを置いてはいけない。** `isKvConfigured()`
+  # （`lib/runtime-stores.ts:44`）は `https://` で始まる URL を「到達可能な KV」と見なすため、
+  # 存在しないホストを書くとレート制限のたびに実 DNS 参照が走り、ENOTFOUND で
+  # 単体・結合テストが落ちる。`memory://` はそのための明示的な宣言（`.env.example` と同じ値）。
+  KV_REST_API_URL: memory://local-dev-only
   KV_REST_API_TOKEN: ci-dummy-kv-token
   FORM_SESSION_SECRET: ci-dummy-form-session-secret-0123456789abcdef
   CRON_SECRET: ci-dummy-cron-secret-0123456789abcdefghij
