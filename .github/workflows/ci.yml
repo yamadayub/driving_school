@@ -41,6 +41,11 @@ env:
   ADMIN_NAME: デモ管理者
   ADMIN_PASSWORD: admin_dev_pw
   NEXT_PUBLIC_SITE_URL: http://localhost:3000
+  # Cloudflare が公開している**テスト用キー**（常に成功する）。秘密ではないのでコミットしてよい。
+  # `lib/env.ts` は本番で両方を必須にし、E2E ジョブは `next build`（NODE_ENV=production）を
+  # 走らせるため、**無いとビルドが ZodError で落ちる**。ローカル `.env` も同じテストキーを使う。
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+  TURNSTILE_SECRET: 1x0000000000000000000000000000000AA
 
 jobs:
   type-check:

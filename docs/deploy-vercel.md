@@ -46,21 +46,30 @@ vercel login
 
 | リソース | 無い場合 |
 |---------|---------|
-| **Vercel Blob** | ⚠️ 下記のとおり**無言で失われる**（F-009） |
+| **Vercel Blob** | 免許証写真のアップロードが「この環境では写真のアップロードをご利用いただけません。」表示になる（F-009） |
 | **Resend** | 申込・問い合わせの自動返信メールが飛ばない（F-010。`lib/mail.ts` は未設定なら送らずに戻る） |
 
-**⚠️ `BLOB_READ_WRITE_TOKEN` が無いと、アップロードは失敗せず無言で失われる。**
-`sharedStorage()`（`lib/storage.ts:305`）はトークンが無いとローカルアダプタに落ち、保存先は
-`os.tmpdir()`（同 `:130`）になる。Vercel の `/tmp` は実行ごと・インスタンスごとに消えるため、
-**利用者には成功したように見えて、免許証写真は残らない。**
+拒否は `components/apply/LicensePhotoUpload.tsx:227` が行う。**`http(s)://` でない `uploadUrl` は
+「成功したことにしない」**——バイトが 1 つも格納されていないのに「添付しました」と表示すると、
+送信時の実体検証（`head()` が null）で必ず落ちるためである。**無言のデータ欠損は起きない。**
 
-以前この表には「『この環境では利用できません』表示になる」と書いてあったが、**その分岐は
-コードに存在しない。** 動作する縮退だと思い込んでいたことが、本番で気づけなかった理由である。
-無効時に UI を止める実装を入れるまで、**トークン未設定のまま公開しないこと。**
+### ⚠️ ただし、トークンを入れてもアップロードは有効にならない
 
-Blob は Vercel ダッシュボード → Storage → Create → Blob で `BLOB_READ_WRITE_TOKEN` が得られる。
-CLI の `vercel blob store add` はストアを作れるが、**プロジェクトへのリンクは対話式**で、
-トークンも CLI からは取得できない。ダッシュボードで Connect すること。
+`createBlobStorageAdapter().createSignedUpload()`（`lib/storage.ts:247-252`）が返す `uploadUrl` は
+`blob:<objectKey>` という**プレースホルダで、実在する PUT 先ではない**。上記の `http(s)://` 判定に
+かかるので、ローカルアダプタと同じ拒否表示になる。
+
+Vercel Blob へ実際にバイトを置くには、`@vercel/blob/client` の `upload()` と、サーバー側の
+`handleUpload()` を受けるルートが要る。**どちらも未実装である**（`/api/uploads/handshake` も存在しない）。
+`lib/storage.ts:225-231` の「実 Blob に対する実測は未実施」はこの意味であり、
+**トークンを設定するだけでは F-009 は動かない。**
+
+Blob ストア `driving-school-uploads`（`store_CO9vzkeFSVrNm8me` / チーム `style-elements`）は
+作成・接続済みで、`BLOB_READ_WRITE_TOKEN` は注入されている。残っているのは上記の実装である。
+
+CLI の `vercel blob store add` はストアを作れるが、**プロジェクトへの接続手順が対話式**で、
+トークンも CLI からは取得できない。ダッシュボード（`https://vercel.com/style-elements/~/stores`）
+か Vercel API の `POST /v1/storage/stores/<storeId>/connections` を使う。
 Postgres と Upstash を Vercel 経由で作った場合、環境変数は**自動で注入される**ので手動投入は不要。
 
 ---
