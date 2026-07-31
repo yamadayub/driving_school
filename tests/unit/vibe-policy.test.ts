@@ -276,7 +276,7 @@ describe('SEC-098: app/ 配下に新しい経路を作らせない', () => {
   it('既存の正当な参照は、そのままなら止めない', () => {
     // app/(public)/apply/page.tsx は正当に FORM_SESSION_SECRET を使っている。
     // 「増えた参照だけ」を違反とするので、無関係な変更で落ちてはいけない。
-    const { dir, base } = makeRepo()
+    const { dir } = makeRepo()
     try {
       writeFileSync(
         join(dir, 'components/ui/Legit.tsx'),
