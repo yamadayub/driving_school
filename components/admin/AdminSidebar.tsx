@@ -16,6 +16,44 @@ const NAV = [
 
 const DISABLED = ['料金・コース', 'FAQ', '受信管理'] as const
 
+/**
+ * スマートフォン用の横並びナビ（`md` 未満で表示）。
+ *
+ * サイドバーは `md:block` で、それ未満では**管理メニューが一切表示されない**状態だった。
+ * 「サイトの見た目を変更」がスマホから辿れないという指摘で判明したが、
+ * 実際にはダッシュボードもお知らせも同様に到達不能だった。
+ *
+ * **項目は `NAV` を共有する。** 別配列にすると、片方にだけ追加されて
+ * 「PC では見えるがスマホでは見えない」が再発する。
+ * 準備中の項目（`DISABLED`）は幅を食うだけなのでモバイルには出さない。
+ */
+export function AdminMobileNav() {
+  const pathname = usePathname()
+
+  return (
+    <nav
+      aria-label="管理メニュー"
+      className="flex gap-2 overflow-x-auto border-b border-border bg-[#111827] px-m py-2 md:hidden"
+    >
+      {NAV.map((item) => {
+        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={active ? 'page' : undefined}
+            className={`whitespace-nowrap rounded-pill px-3 py-1.5 text-body-sm ${
+              active ? 'bg-canvas text-text-primary' : 'text-canvas/80'
+            }`}
+          >
+            {item.label}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
 export function AdminSidebar() {
   const pathname = usePathname()
 

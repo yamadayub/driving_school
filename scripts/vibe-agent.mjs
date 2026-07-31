@@ -44,6 +44,8 @@ const PROTECTED = [
   'auth.config.ts',
   'middleware.ts',
   'app/api/admin/_guard.ts',
+  'app/admin/(app)/layout.tsx',
+  'lib/auth-guard.ts',
   'lib/env.ts',
   'lib/public-guard.ts',
   'lib/http-guard.ts',

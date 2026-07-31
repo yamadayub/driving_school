@@ -32,6 +32,8 @@ const PROTECTED = [
   'auth.config.ts',
   'middleware.ts',
   'app/api/admin/_guard.ts',
+  'app/admin/(app)/layout.tsx',
+  'lib/auth-guard.ts',
   // 起動時検証と公開エンドポイントのラッパ
   'lib/env.ts',
   'lib/public-guard.ts',

@@ -1,5 +1,5 @@
 import { requireAdmin } from '@/lib/auth-guard'
-import { AdminSidebar } from '@/components/admin/AdminSidebar'
+import { AdminSidebar, AdminMobileNav } from '@/components/admin/AdminSidebar'
 import { logout } from './auth-actions'
 
 /**
@@ -38,6 +38,9 @@ export default async function AdminAppLayout({
             </form>
           </div>
         </header>
+
+        {/* サイドバーは md 未満で隠れるため、スマホではここが唯一の管理メニューになる。 */}
+        <AdminMobileNav />
 
         <main id="main" className="mx-auto w-full max-w-[1280px] flex-1 px-m py-l md:px-l">
           {children}
