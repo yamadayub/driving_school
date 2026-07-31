@@ -5,6 +5,7 @@
  */
 import Link from 'next/link'
 import { CTAButton } from '@/components/ui/CTAButton'
+import Image from 'next/image'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { NewsCard } from '@/components/ui/NewsCard'
 import { EmptyState } from '@/components/ui/States'
@@ -55,9 +56,31 @@ export default async function HomePage() {
       {/* 1. Hero */}
       <section
         data-testid="section-hero"
-        className="relative bg-gradient-to-b from-primary-800 to-primary-700 px-m py-xxxl text-white md:px-l"
+        className="relative isolate overflow-hidden px-m py-xxxl text-white md:px-l"
       >
-        <div className="mx-auto max-w-container">
+        {/*
+          教習所コースの写真（ぱくたそ / 自前配信）。**外部URLは使わない**——
+          CSP が `img-src 'self' data: blob:` に制限されているため（lib/csp.ts）。
+          `priority` は LCP 要素なので明示する。
+        */}
+        <Image
+          src="/images/hero.webp"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="-z-20 object-cover"
+        />
+        {/*
+          スクリム。**装飾ではなく可読性のために必要。** この写真は空が明るく、
+          白文字をそのまま乗せるとコントラストが確保できない。
+          ブランド色を重ねることで、写真を敷いても配色の印象を保つ。
+        */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-10 bg-gradient-to-b from-primary-800/90 to-primary-700/75"
+        />
+        <div className="relative mx-auto max-w-container">
           <p className="text-label">通学も合宿も、あなたのペースで</p>
           <h1 className="mt-s text-display font-heading">明日からの新しい自分のために</h1>
           <div className="mt-l flex flex-wrap gap-m">
