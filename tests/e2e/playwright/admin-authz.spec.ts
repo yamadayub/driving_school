@@ -136,12 +136,28 @@ async function withPrisma<T>(fn: (prisma: PrismaClient) => Promise<T>): Promise<
 const CSRF_TITLE_PREFIX = '【E2E-CSRF】'
 const CROSS_ORIGIN = 'https://attacker.example.net'
 
+/**
+ * 後片付けの範囲を「このワーカーが作った行」に限定するためのタグ。
+ *
+ * ⚠️ **接頭辞一致だけで消してはいけない。** `fullyParallel` では同一ファイル内の
+ * 2 つの describe.serial が**別ワーカーに割り当てられる**（実際にそうなっている）。
+ * ファイル直下の afterAll はワーカーごとに走るので、先に終わった側が接頭辞一致で
+ * deleteMany すると、まだ実行中のもう一方が使っている行まで消える。
+ * その結果 PT2-06 の DELETE が 404 になって落ちる——原因が別ワーカーにあるため、
+ * 単体で再実行すると通ってしまい「たまに落ちる」ようにしか見えない。
+ */
+const workerTag = (workerIndex: number) => `[w${workerIndex}]`
+
 // ファイル直下の afterAll は、describe 内の afterAll より**後**に実行される（内側 → 外側）。
 // したがってここで切断すれば、後片付けが未接続の client を掴むことはない。
-test.afterAll(async () => {
+test.afterAll(async ({}, testInfo) => {
   await withPrisma(async (prisma) => {
     try {
-      await prisma.news.deleteMany({ where: { title: { startsWith: CSRF_TITLE_PREFIX } } })
+      await prisma.news.deleteMany({
+        where: {
+          title: { startsWith: CSRF_TITLE_PREFIX, contains: workerTag(testInfo.workerIndex) },
+        },
+      })
     } catch {
       // best-effort（dev DB 未起動などは無視）
     }
@@ -159,7 +175,7 @@ test.describe.serial('PT2-05: 認証済みでもクロスオリジンの変更�
   let origin: string
 
   test.beforeAll(async ({}, testInfo) => {
-    const key = `${testInfo.project.name}-${stamp}`
+    const key = `${workerTag(testInfo.workerIndex)}${testInfo.project.name}-${stamp}`
     csrfTitle = `${CSRF_TITLE_PREFIX}CSRFで作られてはいけない ${key}`
     savedTitle = `${CSRF_TITLE_PREFIX}正規フローで作成 ${key}`
   })
@@ -334,7 +350,7 @@ test.describe.serial('PT2-06: JSON 管理 API のクロスオリジン変更は�
   let createdId: string | null = null
 
   test.beforeAll(async ({}, testInfo) => {
-    jsonTitle = `${CSRF_TITLE_PREFIX}JSON-API ${testInfo.project.name}-${stamp}`
+    jsonTitle = `${CSRF_TITLE_PREFIX}JSON-API ${workerTag(testInfo.workerIndex)}${testInfo.project.name}-${stamp}`
   })
 
   test.beforeEach(async ({ page }) => {
