@@ -101,6 +101,29 @@ export const POST = withAdminMutation(async (request: Request) => {
     })
   }
 
+  // ── master の最新コミット SHA ────────────────────────────────
+  // 「ワークフローが実際にコミットを積んだか」を判定するために使う。
+  // 変更が発生しなかった場合 push されないので、SHA は動かない。
+  if (action === 'head') {
+    const response = await fetch(`${API}/repos/${OWNER}/${REPO}/commits/master`, {
+      headers: gh(token),
+      cache: 'no-store',
+    })
+    if (!response.ok) {
+      return Response.json({ error: `GitHub API: ${response.status}` }, { status: 502 })
+    }
+    const data = (await response.json()) as { sha?: string }
+    return Response.json({ sha: data.sha ?? null })
+  }
+
+  // ── いま公開されているデプロイのコミット SHA ──────────────────
+  // Vercel が注入する `VERCEL_GIT_COMMIT_SHA` を返すだけ。**Vercel API のトークンを
+  // 増やさずにデプロイ完了を判定できる**——新しいデプロイが有効になれば、以降の
+  // リクエストは新しいデプロイに届き、返る SHA が変わる。
+  if (action === 'deployed') {
+    return Response.json({ sha: process.env.VERCEL_GIT_COMMIT_SHA ?? null })
+  }
+
   // ── ワークフローの起動 ────────────────────────────────────────
   if (!instruction.trim()) {
     return Response.json({ error: '指示が空です。' }, { status: 400 })
