@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { deriveTargetPath } from '@/lib/vibe-target'
 
 /**
  * Vibe Coding コンソール。
@@ -19,6 +20,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * リロードするまで画面は古いコードのままなので、続けて指示を出すと
  * 「何がどの版に対する変更なのか」が分からなくなる。**押下は1回に限定し、
  * 続けるならリロードしてもらう。**
+ *
+ * ── なぜ完了後のボタンを 2 つに分けるのか ──────────────────────
+ * 「次の修正をする」と「変更を見に行く」は**行き先が違う**。前者はこの画面の
+ * リロードで足りるが、後者は**変更が反映された公開ページ**へ行く必要がある。
+ * 1 つのボタンに束ねると、変更を確認せずに次の指示へ進める形になってしまう。
+ * 遷移先はコミットが触ったファイルから導く（`lib/vibe-target.ts`）——
+ * トップ固定にすると、コース一覧を直したのにトップへ飛ばされ「変わっていない」
+ * と誤認させるため。
  *
  * **`data-testid` と入力ラベルは変更しないこと** — E2E が参照している。
  */
@@ -69,6 +78,8 @@ export function VibeConsole() {
   const [error, setError] = useState('')
   /** 一度でも押したか。リロードするまで false に戻さない。 */
   const [submitted, setSubmitted] = useState(false)
+  /** 「反映後の画面を確認する」の遷移先。push されたコミットの変更ファイルから決まる。 */
+  const [targetPath, setTargetPath] = useState('/')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(
@@ -120,11 +131,13 @@ export function VibeConsole() {
       }
 
       // 成功。コミットが積まれたか（= push されたか）を SHA で判定する。
-      const head = await post<{ sha: string | null }>({ action: 'head' })
+      const head = await post<{ sha: string | null; paths?: string[] }>({ action: 'head' })
       if (!head?.sha || head.sha === beforeHead) {
         setPhase('nochange')
         return
       }
+      // 同じ応答に入っている変更ファイル一覧から、確認先のページを決める。
+      setTargetPath(deriveTargetPath(head.paths ?? []))
       setPhase('deploying')
       void waitForDeploy(head.sha, Date.now())
     },
@@ -212,6 +225,20 @@ export function VibeConsole() {
           この内容で変更する
         </button>
 
+        {/*
+          反映が確認できたときだけ出す。**変更されたページへ直接飛ばす**——
+          遷移先は `deriveTargetPath` が決めた内部パスなので、外部へは飛ばない。
+        */}
+        {phase === 'deployed' && (
+          <a
+            href={targetPath}
+            data-testid="vibe-open-site"
+            className="rounded bg-accent px-l py-m text-label text-surface"
+          >
+            反映後の画面を確認する
+          </a>
+        )}
+
         {finished && (
           <button
             type="button"
@@ -219,7 +246,7 @@ export function VibeConsole() {
             onClick={() => window.location.reload()}
             className="rounded border border-primary px-l py-m text-label text-primary"
           >
-            {phase === 'deployed' ? '画面を更新して変更を見る' : '画面を更新してやり直す'}
+            {phase === 'deployed' ? '画面を更新して次の修正をおこなう' : '画面を更新してやり直す'}
           </button>
         )}
       </div>
@@ -292,7 +319,7 @@ function Steps({ phase }: { phase: Phase }) {
       })}
       {phase === 'deployed' && (
         <li className="mt-s font-bold text-success">
-          公開サイトに反映されました。「画面を更新して変更を見る」を押してください。
+          公開サイトに反映されました。「反映後の画面を確認する」で変更を見られます。
         </li>
       )}
     </ol>

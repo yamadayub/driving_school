@@ -101,9 +101,13 @@ export const POST = withAdminMutation(async (request: Request) => {
     })
   }
 
-  // ── master の最新コミット SHA ────────────────────────────────
-  // 「ワークフローが実際にコミットを積んだか」を判定するために使う。
+  // ── master の最新コミット SHA と、そのコミットが触ったファイル ──
+  // SHA は「ワークフローが実際にコミットを積んだか」の判定に使う。
   // 変更が発生しなかった場合 push されないので、SHA は動かない。
+  //
+  // `files` は**同じ応答に最初から入っている**（追加のリクエストは要らない）。
+  // 完了後の「反映後の画面を確認する」の遷移先を、変更されたページから決めるために返す
+  // （導出は `lib/vibe-target.ts`）。ここでは加工せず、ファイル名だけを渡す。
   if (action === 'head') {
     const response = await fetch(`${API}/repos/${OWNER}/${REPO}/commits/master`, {
       headers: gh(token),
@@ -112,8 +116,14 @@ export const POST = withAdminMutation(async (request: Request) => {
     if (!response.ok) {
       return Response.json({ error: `GitHub API: ${response.status}` }, { status: 502 })
     }
-    const data = (await response.json()) as { sha?: string }
-    return Response.json({ sha: data.sha ?? null })
+    const data = (await response.json()) as {
+      sha?: string
+      files?: Array<{ filename?: string }>
+    }
+    const paths = (data.files ?? [])
+      .map((file) => file?.filename)
+      .filter((name): name is string => typeof name === 'string')
+    return Response.json({ sha: data.sha ?? null, paths })
   }
 
   // ── いま公開されているデプロイのコミット SHA ──────────────────
