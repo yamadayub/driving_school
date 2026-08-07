@@ -54,9 +54,18 @@ export default async function HomePage() {
   return (
     <div className="flex flex-col">
       {/* 1. Hero */}
+      {/*
+        Hero の縦サイズは **min-height で確保する**（padding だけに任せない）。
+        `py-xxxl` だけだと高さ = 余白 + テキスト量 になり、写真の見える範囲が
+        コピーの行数に引きずられて決まってしまう。写真を主役として見せたいので、
+        下限の高さを明示し、コピーは `items-center` で縦中央に置く。
+        py-xxxl は残す —— min-height を下回る狭い高さの端末で文字が端に張り付かないため。
+        値は Spacing Scale（DESIGN §5）ではなく**レイアウト寸法**なので
+        max-w-container と同様に実寸で持つ（DESIGN §5 Hero）。
+      */}
       <section
         data-testid="section-hero"
-        className="relative isolate overflow-hidden px-m py-xxxl text-white md:px-l"
+        className="relative isolate flex min-h-[420px] items-center overflow-hidden px-m py-xxxl text-white md:min-h-[560px] md:px-l"
       >
         {/*
           教習所コースの写真（ぱくたそ / 自前配信）。**外部URLは使わない**——
@@ -91,7 +100,8 @@ export default async function HomePage() {
           aria-hidden="true"
           className="absolute inset-0 -z-10 bg-gradient-to-b from-primary-800/80 to-primary-700/60 md:bg-gradient-to-r md:from-primary-800/90 md:via-primary-800/60 md:to-primary-700/30"
         />
-        <div className="relative mx-auto max-w-container">
+        {/* flex アイテムになるので w-full が要る（無いと内容幅に縮んで mx-auto が効かない）。 */}
+        <div className="relative mx-auto w-full max-w-container">
           <p className="text-label">通学も合宿も、あなたのペースで</p>
           <h1 className="mt-s text-display font-heading">明日からの新しい自分のために</h1>
           <div className="mt-l flex flex-wrap gap-m">
