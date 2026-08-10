@@ -41,9 +41,10 @@ function colorClass(variant: BadgeVariant, value: string): string {
         ? 'border-school-iwataki text-school-iwataki'
         : 'border-school-amino text-school-amino'
     case 'format':
+      // 通学=紫 / 合宿=ピンク。accent-700 はオレンジ固定なので使わない（design-tokens 参照）。
       return value === 'TSUGAKU'
-        ? 'bg-primary-50 text-primary-700'
-        : 'bg-accent-50 text-accent-700'
+        ? 'bg-accent-50 text-accent-800'
+        : 'bg-primary-50 text-primary-700'
     case 'category':
       switch (value) {
         case 'DRONE':

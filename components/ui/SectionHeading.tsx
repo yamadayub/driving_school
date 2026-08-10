@@ -22,13 +22,23 @@ export function SectionHeading({
   return (
     <div className={align === 'center' ? 'text-center' : 'text-left'}>
       {eyebrow && (
-        <p className="mb-xs text-caption font-bold uppercase tracking-widest text-accent-700">
+        <p className="mb-xs text-caption font-bold uppercase tracking-widest text-accent-800">
           {eyebrow}
         </p>
       )}
       <Tag id={id} className="text-h1 font-heading text-text-primary">
         {title}
       </Tag>
+      {/*
+        見出し直下の短いルール。紫→ピンクのグラデーションでブランドの2色を明示する。
+        装飾なので aria-hidden（読み上げ・E2E の対象にしない）。
+      */}
+      <span
+        aria-hidden="true"
+        className={`mt-s block h-1 w-12 rounded-pill bg-gradient-to-r from-accent-500 to-primary-500 ${
+          align === 'center' ? 'mx-auto' : ''
+        }`}
+      />
       {description && (
         <p className="mt-s text-body text-text-secondary">{description}</p>
       )}

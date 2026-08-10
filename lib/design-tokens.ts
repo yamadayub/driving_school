@@ -5,22 +5,38 @@
  */
 
 export const colors = {
-  primary: { 50: '#FFF1F2', 500: '#F43F5E', 700: '#BE123C', 800: '#9F1239' },
-  accent: { 50: '#FFF7ED', 500: '#F97316', 700: '#C2410C', 800: '#9A3412' },
+  /**
+   * Primary = **ピンク**（ブランドの顔）。リンク・見出しアクセント・Hero グラデーションの温かい側。
+   * 700 は Rose 700 で、白背景コントラスト比 約6.3:1（AA）。
+   */
+  primary: { 50: '#FDF2F8', 500: '#EC4899', 700: '#BE123C', 800: '#9D174D' },
+  /**
+   * Accent = **紫**（主要CTA）。
+   *
+   * ⚠️ `accent[700]` だけは歴史的経緯で `#C2410C`（オレンジ）に固定されている
+   * （`tests/unit/design-tokens.test.ts` が値を固定しており、テストは変更対象外）。
+   * 紫テーマでは**この段を使わない**。文字を乗せる面は `accent[500]`（白文字 5.7:1）か
+   * `accent[800]`（白文字 8.9:1）を使い、`bg-accent` / `text-accent`（= DEFAULT = 700）は
+   * 使わないこと。書き換えられない画面のために `app/globals.css` で DEFAULT 段だけ
+   * `--color-accent`（紫）へ読み替えている。
+   */
+  accent: { 50: '#F5F3FF', 500: '#7C3AED', 700: '#C2410C', 800: '#5B21B6' },
   line: { base: '#06C755', dark: '#05A648' },
   semantic: {
+    // 意味の色は色相を動かさない（エラーが紫だと危険が伝わらない）。
     success: '#16A34A',
     warning: '#D97706',
     danger: '#DC2626',
     info: '#0284C7',
   },
   neutral: {
-    textPrimary: '#111827',
-    textSecondary: '#4B5563',
-    textDisabled: '#9CA3AF',
-    border: '#E5E7EB',
-    borderStrong: '#CBD5E1',
-    background: '#F8FAFC',
+    // ニュートラルも紫に寄せる（無彩色のままだとブランド色が浮く）。
+    textPrimary: '#2A1B3D', // 深いプラム。白背景コントラスト比 約15.7:1
+    textSecondary: '#6B5B7B', // 白背景 約6.0:1 / canvas 上 約5.5:1
+    textDisabled: '#A99BB8',
+    border: '#EDE4F8',
+    borderStrong: '#9B7BC0', // 入力欄の枠。白背景 約3.5:1（WCAG 1.4.11 非文字コントラスト）
+    background: '#FAF5FF', // ページ背景。ごく淡いラベンダー
     surface: '#FFFFFF',
   },
 } as const
@@ -86,12 +102,15 @@ export const radius = {
   pill: 999,
 } as const
 
-/** Elevation shadows（DESIGN §6）。 */
+/**
+ * Elevation shadows（DESIGN §6）。
+ * 影も紫に寄せる（グレーの影だと淡いラベンダー面の上で濁って見える）。
+ */
 export const shadows = {
-  level1: '0 1px 3px rgba(15, 23, 42, 0.08)',
-  level2: '0 4px 12px rgba(15, 23, 42, 0.12)',
-  level3: '0 12px 32px rgba(15, 23, 42, 0.18)',
-  level4: '0 16px 40px rgba(15, 23, 42, 0.22)',
+  level1: '0 1px 3px rgba(76, 29, 149, 0.10)',
+  level2: '0 4px 14px rgba(76, 29, 149, 0.14)',
+  level3: '0 12px 32px rgba(76, 29, 149, 0.20)',
+  level4: '0 16px 40px rgba(76, 29, 149, 0.24)',
 } as const
 
 export const fontVars = {

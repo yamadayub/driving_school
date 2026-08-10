@@ -51,7 +51,7 @@ export function FormStepper({ steps }: { steps: StepperItem[] }) {
       </ol>
       <div aria-hidden="true" className="mt-2 h-1.5 w-full rounded bg-border">
         <div
-          className="h-1.5 rounded bg-accent-700 transition-[width] duration-200"
+          className="h-1.5 rounded bg-gradient-to-r from-accent-500 to-primary-500 transition-[width] duration-200"
           style={{ width: `${ratio}%` }}
         />
       </div>

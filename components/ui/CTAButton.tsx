@@ -19,8 +19,13 @@ interface CTAButtonProps {
   'aria-label'?: string
 }
 
+/**
+ * primary は**紫**（Accent 500 → hover で Accent 800）、secondary/tertiary は**ピンク**（Primary 700）。
+ * ⚠️ `bg-accent`（= DEFAULT = accent-700）は使わない。その段だけオレンジで固定されている
+ *（理由は lib/design-tokens.ts の accent コメント）。
+ */
 const VARIANT_CLASS: Record<CTAVariant, string> = {
-  primary: 'bg-accent text-white hover:bg-accent-800',
+  primary: 'bg-accent-500 text-white shadow-level1 hover:bg-accent-800 hover:shadow-level2',
   secondary: 'border border-primary-700 text-primary-700 bg-surface hover:bg-primary-50',
   tertiary: 'text-primary-700 hover:underline underline-offset-4',
   line: 'bg-line text-white hover:bg-line-dark',
