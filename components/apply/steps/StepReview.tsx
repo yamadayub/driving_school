@@ -57,7 +57,7 @@ export function StepReview({
             href={privacyPath}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary-700 underline"
+            className="text-primary-600 underline"
           >
             プライバシーポリシー
           </Link>

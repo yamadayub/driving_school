@@ -37,13 +37,15 @@ next-route-announcer {
 
   /*
    * Color (DESIGN §2) — CSS変数としても公開（Tailwind外の利用向け）。
-   * 値は lib/design-tokens.ts と同じもの（紫 = Accent / ピンク = Primary）。
+   * 値は lib/design-tokens.ts と同じもの（全面ブルー: Primary = ブランドブルー /
+   * Accent = アズールブルー）。
    */
-  --color-primary: #be123c; /* ピンク（Primary 700） */
-  --color-accent: #7c3aed; /* 紫（Accent 500 = 主要CTA） */
-  --color-accent-dark: #5b21b6; /* 紫の押下・ホバー（Accent 800） */
-  --color-text-primary: #2a1b3d;
-  --color-canvas: #faf5ff;
+  --color-primary: #1d4ed8; /* ブランドブルー（Primary 600 = リンク・枠線） */
+  --color-primary-dark: #1e40af; /* 押下・ホバー（Primary 800） */
+  --color-accent: #0369a1; /* アズールブルー（Accent 500 = 主要CTA） */
+  --color-accent-dark: #075985; /* CTA の押下・ホバー（Accent 800） */
+  --color-text-primary: #0f172a;
+  --color-canvas: #f0f6ff;
   --color-surface: #ffffff;
 }
 
@@ -102,30 +104,45 @@ next-route-announcer {
 }
 
 /*
- * Accent DEFAULT 段の読み替え（紫テーマの取りこぼし防止）。
+ * 「動かせない 700 段」の読み替え（全面ブルーの取りこぼし防止）。
  *
- * `accent` の DEFAULT は Tailwind 側で `accent-700` に束ねられているが、その値
- * `#C2410C`（オレンジ）は単体テストが固定していてトークンから動かせない
- * （lib/design-tokens.ts の accent コメント参照）。
- * 通常のコンポーネントは `accent-500 / accent-800` を明示して使うのでこの段に触れないが、
- * このスキャフォールドで**書き換え対象外のページ**（管理画面）に残る `bg-accent` が
- * 1つだけオレンジで浮くため、DEFAULT 段だけをここで紫へ読み替える。
- * 値は `--color-accent` の 1 箇所に閉じている。
+ * `primary-700` (`#BE123C` ローズ) と `accent-700` (`#C2410C` オレンジ) は
+ * `tests/unit/design-tokens.test.ts` が値を固定していてトークン側から動かせない
+ * （lib/design-tokens.ts の各コメント参照）。`accent` の DEFAULT は Tailwind 側で
+ * `accent-700` に束ねられているので、`bg-accent` も同じ問題を持つ。
+ *
+ * 書き換え可能なコンポーネントは `primary-600/800` `accent-500/800` を明示して使うので
+ * この段に触れない。ただし**書き換え対象外のページ**（`app/admin` 配下）に
+ * `text-primary-700` / `bg-accent` が残っており、そこだけ暖色で浮いてしまう。
+ * そのため 700 段のユーティリティだけをここで青へ読み替える。
+ * 値は `--color-primary` / `--color-accent` の 1 箇所に閉じている。
  * `@tailwind utilities` より後ろに置くことで、同一詳細度で後勝ちになる。
  */
-.bg-accent {
+.bg-primary-700 {
+  background-color: var(--color-primary);
+}
+.text-primary-700 {
+  color: var(--color-primary);
+}
+.border-primary-700 {
+  border-color: var(--color-primary);
+}
+.bg-accent,
+.bg-accent-700 {
   background-color: var(--color-accent);
 }
-.text-accent {
+.text-accent,
+.text-accent-700 {
   color: var(--color-accent);
 }
-.border-accent {
+.border-accent,
+.border-accent-700 {
   border-color: var(--color-accent);
 }
 
-/* 選択範囲もテーマに合わせる（淡い紫の面にプラムの文字）。 */
+/* 選択範囲もテーマに合わせる（淡い青の面にネイビーの文字）。 */
 ::selection {
-  background-color: #e9d5ff;
+  background-color: #bfdbfe;
   color: var(--color-text-primary);
 }
 

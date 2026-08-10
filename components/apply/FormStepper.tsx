@@ -37,7 +37,7 @@ export function FormStepper({ steps }: { steps: StepperItem[] }) {
             aria-current={step.state === 'current' ? 'step' : undefined}
             className={
               step.state === 'current'
-                ? 'font-bold text-primary-700'
+                ? 'font-bold text-primary-600'
                 : step.state === 'done'
                   ? 'text-text-secondary'
                   : 'text-text-disabled'

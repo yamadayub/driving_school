@@ -15,7 +15,7 @@ export function StepEntry({ onChoose }: { onChoose: (type: ApplicationType) => v
           type="button"
           data-testid="apply-type-application"
           onClick={() => onChoose('APPLICATION')}
-          className="rounded-lg border-2 border-border p-4 text-left hover:border-primary-700"
+          className="rounded-lg border-2 border-border p-4 text-left hover:border-primary-600"
         >
           <span className="block font-bold text-text-primary">入所を申し込む</span>
           <span className="mt-1 block text-caption text-text-secondary">
@@ -26,7 +26,7 @@ export function StepEntry({ onChoose }: { onChoose: (type: ApplicationType) => v
           type="button"
           data-testid="apply-type-inquiry"
           onClick={() => onChoose('INQUIRY')}
-          className="rounded-lg border-2 border-border p-4 text-left hover:border-primary-700"
+          className="rounded-lg border-2 border-border p-4 text-left hover:border-primary-600"
         >
           <span className="block font-bold text-text-primary">質問・相談する</span>
           <span className="mt-1 block text-caption text-text-secondary">

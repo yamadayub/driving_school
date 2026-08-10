@@ -224,7 +224,7 @@ function Radio({
       onClick={onSelect}
       className={`min-h-[44px] rounded-pill border px-m text-body-sm font-bold transition-colors ${
         checked
-          ? 'border-primary-700 bg-primary-700 text-white'
+          ? 'border-primary-600 bg-primary-600 text-white'
           : 'border-border bg-surface text-text-primary hover:bg-canvas'
       }`}
     >
@@ -249,7 +249,7 @@ function Toggle({
       onClick={onToggle}
       className={`min-h-[44px] rounded-pill border px-m text-body-sm font-bold transition-colors ${
         pressed
-          ? 'border-primary-700 bg-primary-50 text-primary-700'
+          ? 'border-primary-600 bg-primary-50 text-primary-600'
           : 'border-border bg-surface text-text-primary hover:bg-canvas'
       }`}
     >

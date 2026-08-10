@@ -447,7 +447,7 @@ export function LicensePhotoUpload({
             type="button"
             data-testid={`license-photo-${side}-remove`}
             onClick={() => void remove()}
-            className="mt-2 text-caption text-primary-700 underline"
+            className="mt-2 text-caption text-primary-600 underline"
           >
             削除する
           </button>

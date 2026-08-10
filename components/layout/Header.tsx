@@ -25,7 +25,7 @@ export function Header() {
           aria-label="メニューを開く"
           aria-expanded={drawerOpen}
           onClick={() => setDrawerOpen(true)}
-          className="rounded p-2 text-h3 text-text-primary lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-700"
+          className="rounded p-2 text-h3 text-text-primary lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600"
         >
           ☰
         </button>
@@ -33,7 +33,7 @@ export function Header() {
         <Link
           href="/"
           aria-label="岩滝・網野自動車教習所 トップページへ"
-          className="text-body font-heading font-bold text-primary-700"
+          className="text-body font-heading font-bold text-primary-600"
         >
           岩滝・網野自動車教習所
         </Link>
@@ -47,7 +47,7 @@ export function Header() {
                 key={item.href}
                 href={item.href}
                 aria-current={current ? 'page' : undefined}
-                className="text-label text-text-primary hover:text-primary-700 aria-[current=page]:text-primary-700 aria-[current=page]:underline aria-[current=page]:underline-offset-4"
+                className="text-label text-text-primary hover:text-primary-600 aria-[current=page]:text-primary-600 aria-[current=page]:underline aria-[current=page]:underline-offset-4"
               >
                 {item.label}
               </Link>

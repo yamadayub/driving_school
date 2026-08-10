@@ -31,7 +31,7 @@ export function PricePreview({ courses }: PricePreviewProps) {
             onClick={() => setTab(t)}
             className={`min-h-[44px] rounded-pill border px-l text-label font-bold transition-colors ${
               tab === t
-                ? 'border-primary-700 bg-primary-700 text-white'
+                ? 'border-primary-600 bg-primary-600 text-white'
                 : 'border-border bg-surface text-text-primary hover:bg-canvas'
             }`}
           >
