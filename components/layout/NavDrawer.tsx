@@ -62,7 +62,8 @@ export function NavDrawer({ isOpen, onClose, currentPath }: NavDrawerProps) {
     <div className="fixed inset-0 z-[60] lg:hidden">
       {/* 背景オーバーレイ */}
       <div
-        className="absolute inset-0 bg-[rgba(17,24,39,0.4)]"
+        /* オーバーレイも Text Primary（エスプレッソ）系にする。青みグレーだと黄の面の上で濁る。 */
+        className="absolute inset-0 bg-[rgba(43,32,4,0.45)]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -77,7 +78,7 @@ export function NavDrawer({ isOpen, onClose, currentPath }: NavDrawerProps) {
           ref={closeBtnRef}
           type="button"
           onClick={onClose}
-          className="self-end rounded px-m py-s text-body font-bold text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-700"
+          className="self-end rounded px-m py-s text-body font-bold text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-800"
         >
           ✕ 閉じる
         </button>
@@ -90,7 +91,7 @@ export function NavDrawer({ isOpen, onClose, currentPath }: NavDrawerProps) {
                 href={item.href}
                 onClick={onClose}
                 aria-current={current ? 'page' : undefined}
-                className="flex min-h-[48px] items-center border-b border-border text-body text-text-primary aria-[current=page]:font-bold aria-[current=page]:text-primary-700"
+                className="flex min-h-[48px] items-center border-b border-border text-body text-text-primary aria-[current=page]:font-bold aria-[current=page]:text-primary-600"
               >
                 {item.label}
               </Link>
@@ -99,7 +100,7 @@ export function NavDrawer({ isOpen, onClose, currentPath }: NavDrawerProps) {
         </nav>
         <div className="mt-m flex flex-col gap-s text-body-sm">
           {Object.values(SCHOOLS).map((s) => (
-            <a key={s.code} href={`tel:${s.phoneTollFree.replace(/-/g, '')}`} className="text-primary-700">
+            <a key={s.code} href={`tel:${s.phoneTollFree.replace(/-/g, '')}`} className="text-primary-600">
               📞 {s.name} {s.phoneTollFree}
             </a>
           ))}

@@ -65,7 +65,7 @@ export default async function HomePage() {
       */}
       <section
         data-testid="section-hero"
-        className="relative isolate flex min-h-[420px] items-center overflow-hidden px-m py-xxxl text-white md:min-h-[560px] md:px-l"
+        className="relative isolate flex min-h-[420px] items-center overflow-hidden px-m py-xxxl text-text-primary md:min-h-[560px] md:px-l"
       >
         {/*
           教習所コースの写真（ぱくたそ / 自前配信）。**外部URLは使わない**——
@@ -81,38 +81,52 @@ export default async function HomePage() {
           className="-z-20 object-cover"
         />
         {/*
-          スクリム。**装飾ではなく可読性のために必要。** この写真は空が明るく、
+          スクリム。**装飾ではなく可読性のために必要。** この写真は空も路面も明るく、
           白文字をそのまま乗せるとコントラストが確保できない。
           ブランド色を重ねることで、写真を敷いても配色の印象を保つ。
 
+          **黄テーマでは「濃い色を敷いて白文字」ではなく「黄を敷いて濃い文字」にする。**
+          サイトの主役色が黄なので、ヒーローを暗く落とすとトップの第一印象だけが
+          褐色の暗い面になり、以降のセクション（淡いレモンの地）と別サイトに見える。
+          黄は輝度が高いため、
+            - 写真の明るい部分（空）→ 黄を重ねてもさらに明るいまま
+            - 写真の暗い部分（アスファルト）→ 黄が乗って中間の明るさになる
+          のどちらでもエスプレッソ色の文字（`text-text-primary`）が AA を満たす
+          （最も不利な暗部 × 70% でも約4.8:1、明部では約7.8:1）。逆に白文字は
+          どれだけ黄を濃くしても届かないので、ここでは使えない。
+
           **方向を md で切り替えている。**
           - md 以上: 見出しと CTA が左寄せで右半分が空くので、横方向。
-            左を濃く（文字の可読性）・右を薄く（写真を見せる）。
+            左を濃い黄で塗り（文字の可読性）・右を薄くして写真を見せる。
           - md 未満: 見出しが全幅に回り込み、右端が薄い側に乗って読めなくなるため、
-            横方向は使えない。上下方向で全体をやや濃くする。
+            横方向は使えない。上下方向で全体を均一に黄へ寄せる。
 
-          上下方向で一律に濃くしすぎると、可読性は満たしても写真がほぼ見えなくなる
-          ——初版（/90→/75）がそれ。濃度はいずれも実機幅の描画で詰めた値。
+          濃度を上げすぎると可読性は満たしても写真がほぼ見えなくなるので、
+          文字が乗る帯だけを濃くし、写真を見せたい側は 30% まで落としている。
           ⚠️ 変更するときは**実際に描画して確かめること。** 未使用の Tailwind クラスは
           生成されないので、DevTools でクラス名を差し替えても評価にならない。
         */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 -z-10 bg-gradient-to-b from-primary-800/80 to-primary-700/60 md:bg-gradient-to-r md:from-primary-800/90 md:via-primary-800/60 md:to-primary-700/30"
+          className="absolute inset-0 -z-10 bg-gradient-to-b from-primary-500/85 via-accent-500/75 to-primary-500/70 md:bg-gradient-to-r md:from-accent-500/95 md:via-primary-500/80 md:to-primary-500/30"
         />
         {/* flex アイテムになるので w-full が要る（無いと内容幅に縮んで mx-auto が効かない）。 */}
         <div className="relative mx-auto w-full max-w-container">
           <p className="text-label">通学も合宿も、あなたのペースで</p>
           <h1 className="mt-s text-display font-heading">明日からの新しい自分のために</h1>
+          {/*
+            黄のスクリムの上なので CTA は明暗を反転させる。
+            - 主要CTA: `inverse`（エスプレッソの面 + 白文字）。通常の primary は
+              アンバーの面なので、黄の地に置くとボタンの輪郭が消える。
+            - 次点CTA: `secondary`（白い面 + ゴールドの文字）。黄の地から白が抜けて見え、
+              主要CTA（濃色）との主従も保てる。
+            どちらも className で色を上書きしない（Tailwind は同詳細度・生成順勝ちのため）。
+          */}
           <div className="mt-l flex flex-wrap gap-m">
-            <CTAButton variant="primary" href="/apply?type=APPLICATION">
+            <CTAButton variant="inverse" href="/apply?type=APPLICATION">
               資料請求はこちら
             </CTAButton>
-            <CTAButton
-              variant="secondary"
-              href="/courses"
-              className="border-white bg-transparent text-white hover:bg-white/10"
-            >
+            <CTAButton variant="secondary" href="/courses">
               料金をくらべる
             </CTAButton>
           </div>
@@ -186,7 +200,7 @@ export default async function HomePage() {
                 <p className="text-body-sm text-text-secondary">{s.access}</p>
                 <Link
                   href={`/schools#${s.code.toLowerCase()}`}
-                  className="text-label text-primary-700 hover:underline"
+                  className="text-label text-primary-600 hover:text-primary-800 hover:underline"
                 >
                   詳しく見る →
                 </Link>

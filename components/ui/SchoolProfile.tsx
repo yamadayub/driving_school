@@ -37,7 +37,7 @@ export function SchoolProfile(props: SchoolProfileProps) {
         <a
           href={telHref(props.phoneTollFree)}
           aria-label={`${props.name}フリーダイヤル ${props.phoneTollFree}`}
-          className="inline-flex min-h-[44px] items-center gap-1 rounded border border-border px-m font-bold text-primary-700 hover:bg-primary-50"
+          className="inline-flex min-h-[44px] items-center gap-1 rounded border border-border px-m font-bold text-primary-600 hover:bg-primary-50"
         >
           📞 {props.phoneTollFree}（フリーダイヤル）
         </a>

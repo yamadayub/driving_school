@@ -732,7 +732,7 @@ export function ApplicationForm({
               type="button"
               data-testid="apply-draft-restore"
               onClick={restoreDraft}
-              className="rounded bg-primary-700 px-4 py-2 text-white"
+              className="rounded bg-primary-600 px-4 py-2 text-white hover:bg-primary-800"
             >
               入力を復元する
             </button>
@@ -828,7 +828,7 @@ export function ApplicationForm({
               type="submit"
               data-testid="apply-submit"
               disabled={!consent || submission.kind === 'submitting'}
-              className="rounded bg-accent-700 px-6 py-2 font-bold text-white disabled:opacity-50"
+              className="rounded bg-accent-500 px-6 py-2 font-bold text-text-primary hover:bg-accent-600 disabled:opacity-50"
             >
               {submission.kind === 'submitting' ? '送信しています…' : 'この内容で送信'}
             </button>

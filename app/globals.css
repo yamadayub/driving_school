@@ -37,15 +37,19 @@ next-route-announcer {
 
   /*
    * Color (DESIGN §2) — CSS変数としても公開（Tailwind外の利用向け）。
-   * 値は lib/design-tokens.ts と同じもの（全面ブルー: Primary = ブランドブルー /
-   * Accent = アズールブルー）。
+   * 値は lib/design-tokens.ts と同じもの（全面イエロー: Primary = ブランドイエロー /
+   * Accent = アンバー）。
+   *
+   * ⚠️ ここに置くのは**白文字を乗せられる濃色段だけ**。明るい黄（`#FACC15` /
+   * `#F59E0B`）は白文字が乗らないため、下の 700 段読み替え（＝白文字前提の
+   * 管理画面が使う面）には流し込まない。
    */
-  --color-primary: #1d4ed8; /* ブランドブルー（Primary 600 = リンク・枠線） */
-  --color-primary-dark: #1e40af; /* 押下・ホバー（Primary 800） */
-  --color-accent: #0369a1; /* アズールブルー（Accent 500 = 主要CTA） */
-  --color-accent-dark: #075985; /* CTA の押下・ホバー（Accent 800） */
-  --color-text-primary: #0f172a;
-  --color-canvas: #f0f6ff;
+  --color-primary: #854d0e; /* 濃いゴールド（Primary 600 = リンク・枠線） */
+  --color-primary-dark: #713f12; /* 押下・ホバー（Primary 800） */
+  --color-accent: #b45309; /* 濃いアンバー（管理画面CTAの面。白文字 約5.0:1） */
+  --color-accent-dark: #78350f; /* CTA の押下・ホバー（Accent 800。白文字 約9.1:1） */
+  --color-text-primary: #2b2004;
+  --color-canvas: #fefce8;
   --color-surface: #ffffff;
 }
 
@@ -104,19 +108,23 @@ next-route-announcer {
 }
 
 /*
- * 「動かせない 700 段」の読み替え（全面ブルーの取りこぼし防止）。
+ * 「動かせない 700 段」の読み替え（全面イエローの取りこぼし防止）。
  *
  * `primary-700` (`#BE123C` ローズ) と `accent-700` (`#C2410C` オレンジ) は
  * `tests/unit/design-tokens.test.ts` が値を固定していてトークン側から動かせない
  * （lib/design-tokens.ts の各コメント参照）。`accent` の DEFAULT は Tailwind 側で
  * `accent-700` に束ねられているので、`bg-accent` も同じ問題を持つ。
  *
- * 書き換え可能なコンポーネントは `primary-600/800` `accent-500/800` を明示して使うので
+ * 書き換え可能なコンポーネントは `primary-600/800` `accent-500/600/800` を明示して使うので
  * この段に触れない。ただし**書き換え対象外のページ**（`app/admin` 配下）に
- * `text-primary-700` / `bg-accent` が残っており、そこだけ暖色で浮いてしまう。
- * そのため 700 段のユーティリティだけをここで青へ読み替える。
+ * `text-primary-700` / `bg-accent` が残っており、そこだけローズ/オレンジで浮いてしまう。
+ * そのため 700 段のユーティリティだけをここで黄へ読み替える。
  * 値は `--color-primary` / `--color-accent` の 1 箇所に閉じている。
  * `@tailwind utilities` より後ろに置くことで、同一詳細度で後勝ちになる。
+ *
+ * ⚠️ 読み替え先は**濃色段**にする。`app/admin` 側は `bg-accent` に `text-white` を
+ * 直接書いており、ここに明るい黄を流すとその画面のボタン文字が読めなくなるため
+ * （黄の面には濃色文字、という本テーマの原則は書き換え可能な画面側でのみ守れる）。
  */
 .bg-primary-700 {
   background-color: var(--color-primary);
@@ -140,9 +148,9 @@ next-route-announcer {
   border-color: var(--color-accent);
 }
 
-/* 選択範囲もテーマに合わせる（淡い青の面にネイビーの文字）。 */
+/* 選択範囲もテーマに合わせる（明るい黄の面にエスプレッソの文字）。 */
 ::selection {
-  background-color: #bfdbfe;
+  background-color: #fde047;
   color: var(--color-text-primary);
 }
 

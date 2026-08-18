@@ -17,7 +17,12 @@ export function Header() {
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
+    /*
+      ヘッダーの地は白ではなく **Primary 50（淡いレモン）**。
+      黄テーマではページ地（canvas）自体が淡い黄なので、白いバーのままだと
+      スクロール中にヘッダーだけが白く浮いて残る。下端の罫線は border（淡いゴールド）で締める。
+    */
+    <header className="sticky top-0 z-40 border-b border-border bg-primary-50/95 backdrop-blur">
       <div className="mx-auto flex max-w-container items-center justify-between gap-m px-m py-s md:px-l">
         {/* モバイル: ハンバーガー */}
         <button

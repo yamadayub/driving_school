@@ -41,10 +41,17 @@ function colorClass(variant: BadgeVariant, value: string): string {
         ? 'border-school-iwataki text-school-iwataki'
         : 'border-school-amino text-school-amino'
     case 'format':
-      // 通学=紫 / 合宿=ピンク。accent-700 はオレンジ固定なので使わない（design-tokens 参照）。
+      /*
+        受講形態は **Blue / Orange**（DESIGN §2 Badge Roles, lib/design-tokens の
+        `formatBadgeColors`）。ブランド色（primary/accent）を借りると、サイトが黄一色に
+        なった今は通学と合宿がどちらも黄系になり、**役割の中の値が判別できなくなる**。
+        バッジは役割ごとに独立した色相ドメインを持つ決まりなので、ブランド色から切り離す。
+        値は Tailwind 既定パレットの blue/orange 50・700 で、`formatBadgeColors`
+        （#1D4ED8 on #EFF6FF / #C2410C on #FFF7ED）と同一。
+      */
       return value === 'TSUGAKU'
-        ? 'bg-accent-50 text-accent-800'
-        : 'bg-primary-50 text-primary-700'
+        ? 'bg-blue-50 text-blue-700'
+        : 'bg-orange-50 text-orange-700'
     case 'category':
       switch (value) {
         case 'DRONE':
